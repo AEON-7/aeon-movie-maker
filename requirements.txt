@@ -1,0 +1,5 @@
+# aeon-movie-maker — Python deps.
+# Models live separately on the ComfyUI server.
+
+requests>=2.28      # ComfyUI HTTP API client
+# (urllib.request from stdlib also works; the script uses both)

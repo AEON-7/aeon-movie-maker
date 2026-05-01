@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment
+.env
+.env.local
+*.env
+
+# Output (generated audio/video — don't commit)
+output/
+input/
+temp/
+*.flac
+*.wav
+*.mp3
+*.mp4
+*.aiff
+*.ogg
+*.opus
+
+# Models (huge — fetch via setup.sh)
+models/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.gguf
+
+# Logs
+*.log
+logs/
+
+# Test scratch
+_smoketest_*
+_tmp_*
