@@ -210,6 +210,35 @@ Run `./setup.sh`. It walks the canonical model paths under `${COMFYUI_ROOT}/mode
 
 For Civitai LoRAs (style tags), search Civitai by filename to find each model's page, then download via the API URL pattern shown in `setup.sh`. License terms are set per-LoRA by the original Civitai uploader.
 
+## Updating an existing install
+
+```bash
+cd /path/to/aeon-movie-maker
+./sync.sh
+```
+
+The script:
+1. **Detects local uncommitted changes** and offers to stash + re-apply them
+2. **Shows a diff preview** of incoming commits + files-changed list
+3. **Asks for confirmation** before pulling
+4. **Refreshes Python deps** + re-runs `setup.sh` model check (so any new LTX 2.3 / EROS / LoRA additions are flagged)
+
+### Flags
+
+| Flag | What it does |
+|---|---|
+| `./sync.sh` | Default — interactive, shows diff |
+| `./sync.sh --dry-run` (or `-n`) | Show what would change without pulling |
+| `./sync.sh --yes` (or `-y`) | Non-interactive |
+| `./sync.sh --no-models` | Skip the model file check (faster) |
+| `./sync.sh --help` | Print usage |
+
+### What if I customized something?
+
+The sync script auto-stashes any uncommitted local edits before pulling, then re-applies them. `.env`, your `output/` directory, the staging frames at `${COMFYUI_ROOT}/input/_movie_fast_frames/`, and other personal files are gitignored — they're never touched by sync.
+
+If you've added your own custom LoRA mappings to the `SCENE_LORAS` dict in `scripts/movie_maker_fast.py`, those local edits will be auto-stashed and re-applied. If they conflict with upstream changes (rare), sync stops with clear instructions for resolving.
+
 ## Project structure
 
 ```
