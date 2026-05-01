@@ -143,6 +143,73 @@ For non-narrative work (music videos), substitute `aeon-music-maker` for the aud
 
 `setup.sh` checks all of this and lists download commands for any missing pieces. See `references/AGENT_CINEMA_AUTOPILOT.md` for the full agent runbook.
 
+## Configuration
+
+All config goes through environment variables. Copy `.env.example` to `.env` and fill in your values.
+
+### Where to run this CLI: local vs remote ComfyUI
+
+> ⚠️ **Movie Maker has a constraint the other AEON tools don't have:** the screenplay mode + I2V (image-to-video with seed images and last-frame carry-forward) writes intermediate seed-image PNGs into `${COMFYUI_ROOT}/input/_movie_fast_frames/<scene>/` so the ComfyUI VAE encoder can read them. This means the CLI needs **filesystem-level write access to a path that the ComfyUI server can also read**. Pure-HTTP remote mode (without shared filesystem) does NOT work for I2V or screenplay mode — only for T2V single clips.
+
+#### Mode A — Local (CLI runs on the same machine as ComfyUI) ✓ supports everything
+
+The simplest setup. Both processes share the same filesystem.
+
+```bash
+COMFYUI_URL=http://127.0.0.1:8188
+COMFYUI_ROOT=/path/to/local/ComfyUI
+```
+
+All three subcommands (`clip`, `screenplay`, `stitch`) work without restriction.
+
+#### Mode B — Remote (ComfyUI on a different machine)
+
+Pick the sub-option based on whether you need I2V / screenplay carry-forward:
+
+**B1 — Run the CLI ON the remote machine** (recommended for screenplay work):
+```bash
+# In .env on the REMOTE box:
+COMFYUI_URL=http://127.0.0.1:8188
+COMFYUI_ROOT=/path/to/ComfyUI/on/remote
+```
+Invoke from local terminal:
+```bash
+ssh ${SSH_USER}@<gpu-host> 'cd /path/to/aeon-movie-maker && python scripts/movie_maker_fast.py screenplay screenplay.json'
+scp ${SSH_USER}@<gpu-host>:/path/to/output/movie_fast/<project>/finished_film.mp4 .
+```
+Everything stays on the remote box; you pull the final cut. ✓ I2V works. ✓ screenplay carry-forward works.
+
+**B2 — Run CLI locally + shared filesystem** (advanced):
+Use NFS / SMB / sshfs / Tailscale Files / similar to mount the remote ComfyUI's `input/` directory as a local path. Then point `COMFYUI_ROOT` at the local mount point. The local CLI writes into the shared mount; the remote ComfyUI reads from its native path. ✓ everything works, but adds infrastructure complexity.
+
+**B3 — Run CLI locally + remote HTTP only** (T2V only):
+```bash
+COMFYUI_URL=http://<gpu-box-ip>:8188
+COMFYUI_ROOT=./local-staging   # local dir; only used for output mp4 collection
+```
+Works for `clip` subcommand with **no `--seed-image`** (T2V mode). Does NOT work for screenplay mode or any I2V. The ComfyUI server can't reach your local files for VAE encoding.
+
+### All environment variables
+
+| Variable | Required? | Default | What it is |
+|---|---|---|---|
+| `COMFYUI_URL` | required | `http://127.0.0.1:8188` | ComfyUI HTTP endpoint. |
+| `COMFYUI_ROOT` | **required for I2V/screenplay** | (none) | Path the CLI uses to stage seed-image frames into `input/_movie_fast_frames/`. **Must be readable by the ComfyUI server** — see "local vs remote" above. |
+| `OUTPUT_DIR` | optional | `${COMFYUI_ROOT}/output` | Where rendered MP4s + clips_manifest.json land |
+| `FFMPEG` / `FFPROBE` | optional | PATH lookup | Override binary paths if not on PATH |
+| `HF_TOKEN` | optional | (none) | HuggingFace token for gated Lightricks/LTX-Video models. Get one at https://huggingface.co/settings/tokens (Read scope). Most users install via ComfyUI Manager and never need this. |
+| `CIVITAI_TOKEN` | optional | (none) | Civitai API token for the 7 style LoRAs (cyberpunk / claymation / ghibli / galaxy / tribal / illustration / ghibli_offset). **Only needed if you actually use those `style:` tags.** Get one at https://civitai.com/user/account → API Keys. |
+
+### How to know which model files you need
+
+Run `./setup.sh`. It walks the canonical model paths under `${COMFYUI_ROOT}/models/` and reports what's missing. Easiest installation paths:
+
+1. **ComfyUI Manager** (in-browser UI button) — most LTX 2.3 models are one-click installable
+2. **`huggingface-cli download Lightricks/LTX-Video --include '*.safetensors'`** — for batch installs from the official HF repo
+3. **Manual download** — visit https://huggingface.co/Lightricks/LTX-Video and grab the specific filenames `setup.sh` lists, place at the canonical paths
+
+For Civitai LoRAs (style tags), search Civitai by filename to find each model's page, then download via the API URL pattern shown in `setup.sh`. License terms are set per-LoRA by the original Civitai uploader.
+
 ## Project structure
 
 ```

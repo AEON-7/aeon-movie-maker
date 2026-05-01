@@ -2,6 +2,39 @@
 
 Instructions for AI agents that operate this tool.
 
+## Step 0 — Determine execution mode
+
+This tool has **stricter execution requirements** than its sibling repos because LTX 2.3 I2V and screenplay carry-forward write seed-image PNGs to `${COMFYUI_ROOT}/input/_movie_fast_frames/` for the ComfyUI VAE encoder to read. **Pure-HTTP remote mode (no shared filesystem) does NOT work for I2V or screenplay** — only for `clip` subcommand with `--no-image` / T2V.
+
+### Local mode — CLI on the same machine as ComfyUI ✓ all subcommands work
+
+Symptoms: `COMFYUI_URL=http://127.0.0.1:8188` reachable + `COMFYUI_ROOT` is a real local dir with `models/`, `input/`, `output/`. Invoke directly:
+```bash
+python scripts/movie_maker_fast.py {clip|screenplay|stitch} ...
+```
+
+### Remote mode — ComfyUI on a different machine
+
+Pick the variant based on what subcommand you need:
+
+**Remote-A — Run CLI on the remote machine via SSH** (recommended for `screenplay` and `clip --seed-image`):
+```bash
+ssh ${SSH_USER}@<host> 'cd /path/to/aeon-movie-maker && python scripts/movie_maker_fast.py screenplay screenplay.json'
+scp ${SSH_USER}@<host>:/path/to/output/movie_fast/<project>/finished.mp4 .
+```
+✓ I2V works. ✓ screenplay carry-forward works. Outputs stay remote until you `scp` them.
+
+**Remote-B — Local CLI + shared filesystem mount** (advanced):
+User must have NFS / SMB / sshfs / Tailscale Files mounting the remote ComfyUI's `input/` dir locally. `COMFYUI_ROOT` points at the local mount. Don't recommend this unless the user explicitly tells you they have it set up.
+
+**Remote-C — Local CLI + HTTP only** (T2V `clip` only):
+```bash
+python scripts/movie_maker_fast.py clip --prompt "..." --output local.mp4
+# No --seed-image, no screenplay — these would fail because ComfyUI can't reach local files
+```
+
+**Default**: Remote-A (SSH-invoke on the remote box) for any work involving I2V or screenplay. Remote-C is only viable for one-off T2V clips with no character continuity needed.
+
 ## When to invoke
 
 - User asks for a "film", "movie", "cinematic video", "short film", "music video with cinematic clips"
