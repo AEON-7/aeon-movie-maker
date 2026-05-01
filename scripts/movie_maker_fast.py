@@ -86,25 +86,30 @@ MODES = {
     "fast": {
         # Default for narrative / character-driven content.
         # Drops the distill LoRA (already baked in), keeps union control + VBVR physics.
+        # LoRA strengths defaulted at 0.7 — tuned for clean realistic output.
+        # If your renders look over-saturated or distorted, lower further to 0.5;
+        # if they look too "neutral" / under-stylized, bump up toward 1.0.
+        # CLI overrides: --vbvr-strength, --ic-lora-strength, --distill-strength.
         "checkpoint":   "ltx-2.3-22b-distilled-fp8.safetensors",
         "video_vae":    "LTX23_video_vae_bf16.safetensors",
         "text_encoder": "gemma-3-12b-abliterated-text-encoder.safetensors",
         "joint_av":     False,
         "always_on_loras": [
-            ("ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors", 1.0),
-            (f"ltx2{_SEP}Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors", 1.0),
+            ("ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors", 0.7),
+            (f"ltx2{_SEP}Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors", 0.7),
         ],
     },
     "quality": {
         # EROS joint-AV pipeline — slow, mostly for debugging vs the fast path.
+        # Distill LoRA at 0.5 is intentional partial distillation of the EROS base.
         "checkpoint":   f"ltx2{_SEP}ltx-2.3-eros.safetensors",
         "video_vae":    "LTX23_video_vae_bf16.safetensors",
         "text_encoder": "gemma-3-12b-abliterated-text-encoder.safetensors",
         "joint_av":     True,
         "always_on_loras": [
             (f"ltx2{_SEP}ltx-2.3-22b-distilled-lora-384.safetensors", 0.5),
-            ("ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors", 1.0),
-            (f"ltx2{_SEP}Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors", 1.0),
+            ("ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors", 0.7),
+            (f"ltx2{_SEP}Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors", 0.7),
         ],
     },
     "abstract": {
@@ -129,6 +134,40 @@ DEFAULT_MODE = "fast"
 # Back-compat shims — old callers used these constants directly
 DEFAULT_MODELS = {k: MODES[DEFAULT_MODE][k] for k in ("checkpoint", "video_vae", "text_encoder")}
 ALWAYS_ON_LORAS = MODES[DEFAULT_MODE]["always_on_loras"]
+
+
+def _override_lora_strength(loras_list, lora_filename_substr, new_strength):
+    """Return a new list with the strength rewritten for any LoRA whose path
+    contains the given case-insensitive substring. No-op if `new_strength` is None
+    or no entry matches."""
+    if new_strength is None:
+        return loras_list
+    needle = lora_filename_substr.lower()
+    out = []
+    for path, strength in loras_list:
+        if needle in path.lower():
+            out.append((path, float(new_strength)))
+        else:
+            out.append((path, strength))
+    return out
+
+
+def apply_cli_lora_overrides(args):
+    """If the user passed --vbvr-strength or --ic-lora-strength, mutate the
+    relevant MODES[*]['always_on_loras'] in place so all downstream renders
+    pick up the new strength. Idempotent — safe to call once per main()."""
+    vbvr = getattr(args, "vbvr_strength", None)
+    iclo = getattr(args, "ic_lora_strength", None)
+    if vbvr is None and iclo is None:
+        return
+    for mode_name, cfg in MODES.items():
+        new = cfg["always_on_loras"]
+        new = _override_lora_strength(new, "vbvr", vbvr)
+        new = _override_lora_strength(new, "ic-lora-union", iclo)
+        cfg["always_on_loras"] = new
+    # Refresh module-level constant too
+    global ALWAYS_ON_LORAS
+    ALWAYS_ON_LORAS = MODES[DEFAULT_MODE]["always_on_loras"]
 
 # Per-scene LoRAs — selected by screenplay tags on the scene or dialogue.
 # `tag` match is case-insensitive substring against the scene's tag list
@@ -1124,6 +1163,12 @@ def main():
         help="A2V: diffusion timestep fraction to start applying audio guidance (default 0.0).")
     pc.add_argument("--audio-end-pct", type=float, default=1.0,
         help="A2V: diffusion timestep fraction to stop applying audio guidance (default 1.0).")
+    pc.add_argument("--vbvr-strength", type=float, default=None,
+        help="Override VBVR physics LoRA strength (default 0.7). Lower (0.3-0.5) if "
+             "output is over-saturated or distorted; raise toward 1.0 for stronger physics constraints.")
+    pc.add_argument("--ic-lora-strength", type=float, default=None,
+        help="Override IC-LoRA union control strength (default 0.7). Lower if "
+             "output is over-stylized; raise toward 1.0 for stronger composition control.")
     pc.add_argument("--output", "-o", default=None,
         help="Output mp4 path (default: output/movie_fast/<slug>_<seed>.mp4)")
 
@@ -1145,6 +1190,10 @@ def main():
     ps.add_argument("--persistence", type=float, default=None,
         help="Global persistence override (0..1). Individual scenes can set their own `persistence` field.")
     ps.add_argument("--sampler", default="euler")
+    ps.add_argument("--vbvr-strength", type=float, default=None,
+        help="Override VBVR physics LoRA strength (default 0.7). Applied to every scene.")
+    ps.add_argument("--ic-lora-strength", type=float, default=None,
+        help="Override IC-LoRA union control strength (default 0.7). Applied to every scene.")
     ps.add_argument("--no-carry-last-frame", dest="carry_last_frame",
         action="store_false", default=True,
         help="Disable last-frame carry-forward between chunks of a scene. "
@@ -1171,6 +1220,10 @@ def main():
         print("       python movie_maker_fast.py clip --image IMG --prompt '...' [options]")
         print("       python movie_maker_fast.py screenplay screenplay.json [options]")
         sys.exit(1)
+
+    # Apply --vbvr-strength / --ic-lora-strength overrides if provided.
+    # Mutates MODES in place so all downstream renders pick them up.
+    apply_cli_lora_overrides(args)
 
     if args.cmd == "screenplay":
         render_screenplay(

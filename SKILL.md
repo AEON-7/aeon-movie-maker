@@ -317,13 +317,89 @@ Dimension sensitivity: 832×480 is the sweet spot. At 1280×720 expect ~1.8× lo
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| HTTP 400 on submit with `value_not_in_list` | Path uses `/` instead of `\` on Windows | Use `\\` in lora_name / ckpt_name — tool handles this automatically via `_SEP` |
+| HTTP 400 on submit with `value_not_in_list` | Path uses `/` instead of `\` on Windows; OR a model file is missing at the expected path | First, check filenames + paths against `setup.sh`. The 'ltx2/' subfolder under `models/checkpoints/` and `models/loras/` is **not optional** — keep it. Second, use `\\` in any custom lora_name / ckpt_name string. |
+| **Output looks over-saturated, distorted, or "off"** | Almost always one of: (1) wrong checkpoint installed at wrong path, (2) text encoder mismatch (.gguf vs .safetensors), (3) LoRA strengths stacking too high. | See § 11a "Saturation & distortion troubleshooting" below. |
 | HTTP 400 with `scheduler: 'beta57' not in [...]` | ComfyUI version doesn't have that scheduler | Use `linear_quadratic` or `beta` (tool default is `linear_quadratic`) |
 | Output file not found after success | SaveVideo writes under `outputs[id]['images']` not `['videos']` | Tool checks all 3 keys — should not recur |
 | Faces drift between clips | No character consistency | Pass same `--seed` + ensure `characters` dict is consistent; focal char inferred from first dialogue speaker |
 | Audio clips don't align with video | Dialogue master built separately; positions drift | Use radio_drama.py's scheduler to build the dialogue track at fixed offsets matching scene timings |
 | OOM on a 7 s clip | Fast mode requires ~20 GB VRAM with models warm | Reduce resolution to 768×432 or restart ComfyUI to clear cached models |
 | First clip is 80+ s but subsequent ones are fast | Cold load of 27 GB checkpoint + 12 GB encoder | Normal — render one throwaway 3-s clip first to warm the cache |
+
+## 11a. Saturation & distortion troubleshooting
+
+If output is over-saturated, washed out, or shows obvious diffusion artifacts (scrambled faces, smeary motion, wrong colors), work through these in order — each one is a real bug or misconfig that's bitten users:
+
+### Step 1 — Verify the right checkpoint is loaded
+
+Open ComfyUI's `models/checkpoints/` directory. The fast-mode checkpoint must be at this **exact** path:
+
+```
+models/checkpoints/ltx-2.3-22b-distilled-fp8.safetensors
+```
+
+Common mistake: users see "ltxv-distilled" on a HuggingFace page and download `ltxv-2b-0.9.7-distilled-fp8_e4m3fn.safetensors` (an older 2024 LTXV release, ~6 GB). That model loads fine in ComfyUI but **produces saturated, distorted output** because the script feeds it an LTX 2.3-shaped latent it can't decode correctly. The fix is to download the right file from `huggingface.co/Lightricks/LTX-Video` — should be ~22 GB.
+
+For quality mode + A2V, EROS lives at:
+
+```
+models/checkpoints/ltx2/ltx-2.3-eros.safetensors
+```
+
+(The `ltx2/` subfolder is **not optional**.)
+
+### Step 2 — Verify the text encoder
+
+The script loads:
+
+```
+models/text_encoders/gemma-3-12b-abliterated-text-encoder.safetensors
+```
+
+If you only have the `.gguf` quantization (`google_gemma-3-12b-it-abliterated-v2-Q6_K.gguf`), the LTX text-encoder loader will fail or use a fallback path that produces incoherent embeddings → garbage video. Get the `.safetensors` variant from the same Lightricks repo.
+
+### Step 3 — Tune LoRA strengths
+
+Defaults in v0.2+:
+
+| LoRA | Default | Lower if… | Raise toward 1.0 if… |
+|---|---|---|---|
+| VBVR physics (`Ltx2.3-Licon-VBVR-...`) | **0.7** | Output looks plasticky / over-physical / saturated | Motion looks fake or unphysical |
+| IC-LoRA Union (`ic-lora-union-control-ref0.5`) | **0.7** | Output looks too "neutral" / flat | Composition drifts wildly between frames |
+| Distill assist (quality mode only) | 0.5 | (rarely needs change) | (rarely needs change) |
+
+Override at the CLI:
+
+```bash
+python movie_maker_fast.py clip --prompt "..." \
+    --vbvr-strength 0.5 \
+    --ic-lora-strength 0.5 \
+    -o out.mp4
+```
+
+If you got distorted output and you've verified the right checkpoint is loaded, **start by lowering both to 0.5**. That reproduces the most balanced LTX 2.3 community config.
+
+### Step 4 — Check CFG and steps
+
+| Mode | Default CFG | Default steps | When to adjust |
+|---|---|---|---|
+| `fast` | 3.0 | 20 | If output is too "loose" (drifts from prompt), raise CFG to 4.0. If saturated/burnt, lower to 2.5. |
+| `quality` | 3.0 | 30 | Same. EROS is sensitive — keep CFG ≤ 4.0. |
+| `abstract` | 5.0 | 30 | Higher CFG works here because abstract content benefits from prompt adherence. |
+
+CFG > 6 with any LTX 2.3 variant produces saturated, noisy, posterized output — that's the model's signature failure mode.
+
+### Step 5 — Check the VAE
+
+The video VAE must be `LTX23_video_vae_bf16.safetensors` at `models/vae/`. If a wrong VAE loads (e.g., a non-LTX VAE leftover from another project), colors shift dramatically — that's a known cause of "off" output.
+
+### Step 6 — Disable style LoRAs to isolate
+
+Style LoRAs (`style: cyberpunk`, `style: claymation`, etc.) layer on top of always-on LoRAs. Stacking 3+ can cause distortion. Render once with no `--style` and no style tags in screenplay JSON to confirm the base pipeline is clean. Then add styles one at a time.
+
+### Step 7 — Last resort: warm the model cache
+
+The first clip after ComfyUI restart loads ~50 GB of weights from disk. If your disk is slow or other processes are competing for memory, the first clip's diffusion can produce unstable output. Render one throwaway 3-second clip to warm the cache, then retry your real shot.
 
 ## 11b. Cinematic scoring — making the music serve the film
 

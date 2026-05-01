@@ -38,19 +38,38 @@ fi
 c_blu "[4/4] Model file check"
 cat <<'EOF'
 
-      LTX 2.3 22B + EROS (video generation, both modes):
-        models/diffusion_models/ltxv-2b-0.9.7-distilled-fp8_e4m3fn.safetensors  (~22 GB, REQUIRED for fast mode)
-        models/diffusion_models/ltxv-eros-9.7b.safetensors                       (~30 GB, REQUIRED for quality + A2V)
+      ╔══════════════════════════════════════════════════════════════════╗
+      ║ EXACT FILENAMES + PATHS BELOW — must match what the script loads ║
+      ║ (filenames are case-sensitive on Linux; the 'ltx2/' subfolder is ║
+      ║ NOT optional — keep the directory structure as written)          ║
+      ╚══════════════════════════════════════════════════════════════════╝
 
-      Text encoder (abliterated Gemma):
-        models/text_encoders/google_gemma-3-12b-it-abliterated-v2-Q6_K.gguf      (~9.5 GB, REQUIRED)
+      LTX 2.3 22B base models (download from https://huggingface.co/Lightricks/LTX-Video):
+        models/checkpoints/ltx-2.3-22b-distilled-fp8.safetensors                 (~22 GB, REQUIRED for 'fast' + 'abstract' modes)
+        models/checkpoints/ltx2/ltx-2.3-eros.safetensors                         (~30 GB, REQUIRED for 'quality' mode + --audio-reference A2V)
 
-      LoRAs:
-        models/loras/ltxv-physics-vbvr.safetensors                               (REQUIRED for fast mode physics)
-        models/loras/ltxv-ic-lora-union.safetensors                              (optional, for IC-LoRA composition)
+      Video VAE:
+        models/vae/LTX23_video_vae_bf16.safetensors                              (REQUIRED, ships in the LTX-Video HF release)
 
-      Audio VAE (only needed for A2V quality mode):
-        models/vae/ltxv-audio-vae.safetensors                                    (~250 MB, REQUIRED for --audio-reference)
+      Text encoder (abliterated Gemma — safetensors, NOT the GGUF variant):
+        models/text_encoders/gemma-3-12b-abliterated-text-encoder.safetensors    (~25 GB, REQUIRED)
+
+      Always-on LoRAs (downloaded from Lightricks/LTX-Video on HuggingFace):
+        models/loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors        (REQUIRED — composition control, applied to both fast + quality modes)
+        models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors            (REQUIRED — VBVR physics, applied to fast + quality modes)
+        models/loras/ltx2/ltx-2.3-22b-distilled-lora-384.safetensors             (REQUIRED for quality mode only — distill assist on EROS)
+
+      Optional camera/style/control LoRAs (loaded only when screenplay tags request them):
+        models/loras/ltx-2-19b-lora-camera-control-dolly-left.safetensors        ('camera: dolly-left')
+        models/loras/ltx2/ltx-2-19b-lora-camera-control-jib-down.safetensors     ('camera: jib-down')
+        models/loras/ltx2/ltx23_zoomout_z00m047.safetensors                      ('zoomout' / inferred from prompt)
+        models/loras/ltx2/ltx23__demopose_d3m0p0s3.safetensors                   ('pose: demo')
+        models/loras/ltx2/LTX2.3_Reasoning_V1.safetensors                        ('reasoning')
+        models/loras/ltx2.3-transition.safetensors                               ('transition' — auto-added at scene boundaries)
+        models/loras/ltx-2.3-id-lora-talkvid-3k.safetensors                      ('character: talkinghead')
+
+      Audio VAE (only needed if you ever pass --audio-reference for A2V quality mode):
+        models/vae/ltx-2-audio-vae.safetensors                                   (~250 MB)
 
       Style LoRAs (CIVITAI-HOSTED — needs CIVITAI_TOKEN, not HF_TOKEN):
         models/loras/CyberPunkAI.safetensors                                     (cyberpunk style preset)
@@ -82,20 +101,41 @@ if [[ -z "$COMFYUI_ROOT" ]]; then
     c_yel "      COMFYUI_ROOT not set — can't check local presence. Verify on your ComfyUI host."
 else
     REQUIRED=(
-        "diffusion_models/ltxv-2b-0.9.7-distilled-fp8_e4m3fn.safetensors"
-        "text_encoders/google_gemma-3-12b-it-abliterated-v2-Q6_K.gguf"
-        "loras/ltxv-physics-vbvr.safetensors"
+        "checkpoints/ltx-2.3-22b-distilled-fp8.safetensors"
+        "vae/LTX23_video_vae_bf16.safetensors"
+        "text_encoders/gemma-3-12b-abliterated-text-encoder.safetensors"
+        "loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
+        "loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors"
+    )
+    OPTIONAL=(
+        # 'quality' mode + A2V — only if user runs `--mode quality` or passes audio
+        "checkpoints/ltx2/ltx-2.3-eros.safetensors"
+        "loras/ltx2/ltx-2.3-22b-distilled-lora-384.safetensors"
+        "vae/ltx-2-audio-vae.safetensors"
     )
     missing=()
     for m in "${REQUIRED[@]}"; do
         [[ -f "$COMFYUI_ROOT/models/$m" ]] || missing+=("$m")
     done
     if [[ ${#missing[@]} -eq 0 ]]; then
-        c_grn "      ✓ required models present"
+        c_grn "      ✓ all required models present"
     else
         c_yel "      ${#missing[@]} required model(s) missing:"
         for m in "${missing[@]}"; do echo "        - $m"; done
-        c_yel "      Use ComfyUI Manager or huggingface-cli to fetch."
+        c_yel "      Download with huggingface-cli (recommended):"
+        c_yel "        huggingface-cli download Lightricks/LTX-Video --include '*.safetensors' \\"
+        c_yel "          --local-dir \$COMFYUI_ROOT/models/staging-ltx"
+        c_yel "      Then move/symlink files into the canonical paths above. Or use the ComfyUI Manager UI."
+    fi
+    # Optional models — quality mode + A2V
+    opt_missing=()
+    for m in "${OPTIONAL[@]}"; do
+        [[ -f "$COMFYUI_ROOT/models/$m" ]] || opt_missing+=("$m")
+    done
+    if [[ ${#opt_missing[@]} -gt 0 ]]; then
+        c_yel "      Optional (quality mode / A2V) — ${#opt_missing[@]} not present:"
+        for m in "${opt_missing[@]}"; do echo "        - $m"; done
+        c_yel "      Skip these unless you'll run '--mode quality' or pass --audio-reference."
     fi
 fi
 
