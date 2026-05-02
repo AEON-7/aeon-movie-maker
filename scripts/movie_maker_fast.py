@@ -66,7 +66,7 @@ OUTPUT_ROOT = os.environ.get("OUTPUT_DIR", os.path.join(COMFYUI_ROOT, "output"))
 # for nested model subdirectories (forward-slash paths fail validation with
 # `value_not_in_list`). All nested paths here use `\` for Windows — plain basenames
 # stay as-is. If porting to Linux, replace `\\` with `/`.
-_SEP = "\\"
+_SEP = os.sep
 
 # Two render modes — picks checkpoint + audio-pipeline strategy per call:
 #
@@ -107,7 +107,8 @@ MODES = {
         "text_encoder": "gemma-3-12b-abliterated-text-encoder.safetensors",
         "joint_av":     True,
         "always_on_loras": [
-            (f"ltx2{_SEP}ltx-2.3-22b-distilled-lora-384.safetensors", 0.5),
+            # ComfyUI lists the -1.1 variant under ltxv/ prefix
+            (f"ltxv{_SEP}ltx2{_SEP}ltx-2.3-22b-distilled-lora-384-1.1.safetensors", 0.5),
             ("ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors", 0.7),
             (f"ltx2{_SEP}Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors", 0.7),
         ],
@@ -1341,6 +1342,7 @@ def main():
     # `images` key of the node output (historical quirk — the `videos` key is used
     # only by older VHS nodes). Check both keys + any animation entries.
     src = None
+    container_path = None
     for v in result.get("outputs", {}).values():
         for key in ("videos", "gifs", "images"):
             for a in v.get(key, []):
@@ -1349,15 +1351,42 @@ def main():
                 fn = a["filename"]
                 if not fn.lower().endswith((".mp4", ".webm", ".gif")):
                     continue
-                p_cand = os.path.join(OUTPUT_ROOT, a.get("subfolder", ""), fn)
-                if os.path.exists(p_cand):
-                    src = p_cand; break
+                subfolder = a.get("subfolder", "")
+                p_local = os.path.join(OUTPUT_ROOT, subfolder, fn)
+                if os.path.exists(p_local):
+                    src = p_local; break
+                # File not found locally — assume it's inside a Docker container at the
+                # container-side OUTPUT_ROOT path. Record the relative path for docker cp.
+                container_rel = os.path.join(subfolder, fn)
+                container_path = os.path.join("/workspace/ComfyUI/output", container_rel)
+                src = p_local; break
             if src: break
         if src: break
     if not src:
         print("ERROR: no output video file found in history")
         print(f"outputs: {json.dumps(result.get('outputs',{}), indent=2)[:500]}")
         sys.exit(1)
+
+    # If the source is inside Docker (container_path set but local file missing), copy it out
+    if container_path and not os.path.exists(os.path.join(OUTPUT_ROOT, container_path.replace("/workspace/ComfyUI/output/", ""))):
+        # Try docker cp to bring the file from the container
+        cont_name = os.environ.get("COMFYUI_CONTAINER", "comfyui-spark")
+        cp_src = f"{cont_name}:{container_path}"
+        os.makedirs(os.path.dirname(src), exist_ok=True)
+        cp_result = subprocess.run(
+            ["docker", "cp", cp_src, src],
+            capture_output=True, text=True
+        )
+        if cp_result.returncode != 0:
+            # Last resort: try finding via docker exec find
+            find_result = subprocess.run(
+                ["docker", "exec", cont_name, "find", "/workspace/ComfyUI/output",
+                 "-name", fn, "-type", "f"],
+                capture_output=True, text=True
+            )
+            found_paths = [p.strip() for p in find_result.stdout.strip().split("\n") if p.strip()]
+            if found_path := found_paths[0] if found_paths else None:
+                subprocess.run(["docker", "cp", f"{cont_name}:{found_path}", src], check=True)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     if os.path.abspath(src) != out_path:
