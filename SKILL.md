@@ -19,6 +19,7 @@ description: >
 
 - **Host:** `${SSH_USER}@127.0.0.1` (Workstation — RTX 5090, 64 GB RAM)
 - **Tool:** `${COMFYUI_ROOT}\scene_production_tool\movie_maker_fast.py`
+- **⚠️ DGX Spark / Docker deployment:** If ComfyUI is inside a Docker container (e.g. `comfyui-spark`), see `references/docker-deployment.md` for critical fixes: `_SEP` path separator bug and `docker cp` output retrieval.
 - **Companion tools** (invoked by this one for audio):
   - `scene_production_tool/radio_drama.py` — dialogue TTS + SFX priority chain
   - `music_tool/music_maker.py` — music cues via ACE Step XL base + APG chain
