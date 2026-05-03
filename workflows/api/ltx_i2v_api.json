@@ -1,0 +1,461 @@
+{
+  "3059": {
+    "class_type": "EmptyLTXVLatentVideo",
+    "inputs": {
+      "length": 121,
+      "width": 960,
+      "height": 544,
+      "batch_size": 1
+    }
+  },
+  "3980": {
+    "class_type": "LTXVEmptyLatentAudio",
+    "inputs": {
+      "audio_vae": [
+        "4010",
+        0
+      ],
+      "frames_number": 97,
+      "frame_rate": 25,
+      "batch_size": 1
+    }
+  },
+  "4528": {
+    "class_type": "LTXVConcatAVLatent",
+    "inputs": {
+      "video_latent": [
+        "3159",
+        0
+      ],
+      "audio_latent": [
+        "3980",
+        0
+      ]
+    }
+  },
+  "3159": {
+    "class_type": "LTXVImgToVideoConditionOnly",
+    "inputs": {
+      "vae": [
+        "3940",
+        2
+      ],
+      "image": [
+        "3336",
+        0
+      ],
+      "latent": [
+        "3059",
+        0
+      ],
+      "bypass": false,
+      "strength": 0.7
+    }
+  },
+  "1241": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": [
+        "2483",
+        0
+      ],
+      "negative": [
+        "2612",
+        0
+      ],
+      "frame_rate": 24
+    }
+  },
+  "4976": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler_cfg_pp"
+    }
+  },
+  "4971": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "4967",
+        0
+      ],
+      "guider": [
+        "4964",
+        0
+      ],
+      "sampler": [
+        "4976",
+        0
+      ],
+      "sigmas": [
+        "4985",
+        0
+      ],
+      "latent_image": [
+        "4969",
+        0
+      ]
+    }
+  },
+  "4964": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "4922",
+        0
+      ],
+      "positive": [
+        "1241",
+        0
+      ],
+      "negative": [
+        "9001",
+        0
+      ],
+      "cfg": 1
+    }
+  },
+  "4980": {
+    "class_type": "GemmaAPITextEncode",
+    "inputs": {
+      "api_key": "",
+      "prompt": "",
+      "use_bolt": "ltx-2.3-22b-dev.safetensors"
+    }
+  },
+  "4979": {
+    "class_type": "PrimitiveString",
+    "inputs": {
+      "value": ""
+    }
+  },
+  "3336": {
+    "class_type": "LTXVPreprocess",
+    "inputs": {
+      "image": [
+        "9990",
+        0
+      ],
+      "target_fps": 18,
+      "img_compression": 3
+    }
+  },
+  "2612": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "4982",
+        0
+      ],
+      "text": "Starting from the spiraling mahogany walkway. 0-6s: The bookish adventurer winds the key on her mechanical lantern; it flares to life with a warm cognac glow that pushes amber light across the polished mahogany and brass railings. She looks up the spiraling atrium. Camera is low-angle looking up the spiral, slowly craning upward to reveal the impossible vertical scale of living bookshelves stretching into warm golden haze. Three leather-bound books with paper wings flutter past in the foreground, leaving trails of warm parchment-light that fade like sparkler embers. Her expression: quiet anticipation, eyes widening slightly, pupils catching the lantern flare.\n\n6-14s: She begins walking up the spiraling walkway. The camera tracks beside her at medium distance while simultaneously craning upward, creating a spiraling camera path that mirrors the architecture. Dozens of books take flight from the shelves, their paper wings beating with overlapping action on staggered timing\u2014each book moves on a slightly different flutter rhythm, creating a living swarm rather than synchronized movement. The books leave ink-sparkle trails that swirl in the warm air. Dust motes dance in the light beams, each mote on its own lazy independent drift path. Her hair and messenger bag strap bounce with follow-through motion lagging 4 frames behind her stride. She reaches out to let a small poetry book brush her fingertips, and it leaves a smudge of warm gold ink on her skin that glows faintly.\n14-20s: She stops at a brass railing, leaning over to look down into the infinite depth below. The camera pushes in past her shoulder to reveal the vertiginous drop, then whips back up as a massive atlas-book with broad paper wings swoops down from the upper shelves. Its wing-shadow flits across the stained-glass window, momentarily darkening the ruby and amber geometric patterns cast across the floor and her face. She gasps\u2014expression shifting from awe to pure wonder\u2014and reaches out. The atlas hovers, pages riffling with secondary motion, releasing a burst of ink-sparkles that catch the lantern light and glow like warm fireflies in the cognac-toned air.\n20-25s: The camera slowly orbits 60 degrees around her as she raises the lantern toward the hovering atlas. The lantern's warm glow and the stained-glass ruby/amber patterns mix on her face, creating dynamic color bleeding that shifts across her skin as the orbit progresses. She smiles, a crooked, curious grin. The ink-sparkles spiral around the lantern in a helix formation, their light reflecting in her large expressive eyes. Camera dollies in for an extreme close-up of her eyes, which reflect the infinite spiraling bookshelves above. A single dust mote drifts through the frame in foreground, shallow depth of field keeping it creamy. Final hold: the mechanical lantern ticks softly, its glow pulsing once, and a distant rolling ladder rumbles along its brass track."
+    }
+  },
+  "4832": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 43,
+      "seed_gen_type": "fixed"
+    }
+  },
+  "4828": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "4922",
+        0
+      ],
+      "positive": [
+        "1241",
+        0
+      ],
+      "negative": [
+        "9001",
+        0
+      ],
+      "cfg": 1
+    }
+  },
+  "4831": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler_ancestral_cfg_pp"
+    }
+  },
+  "4829": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "4832",
+        0
+      ],
+      "guider": [
+        "4828",
+        0
+      ],
+      "sampler": [
+        "4831",
+        0
+      ],
+      "sigmas": [
+        "4984",
+        0
+      ],
+      "latent_image": [
+        "4528",
+        0
+      ]
+    }
+  },
+  "4967": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 42,
+      "seed_gen_type": "fixed"
+    }
+  },
+  "4984": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+    }
+  },
+  "4985": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "0.85, 0.7250, 0.4219, 0.0"
+    }
+  },
+  "4969": {
+    "class_type": "LTXVConcatAVLatent",
+    "inputs": {
+      "video_latent": [
+        "4970",
+        0
+      ],
+      "audio_latent": [
+        "4845",
+        1
+      ]
+    }
+  },
+  "4970": {
+    "class_type": "LTXVImgToVideoConditionOnly",
+    "inputs": {
+      "vae": [
+        "3940",
+        2
+      ],
+      "image": [
+        "9990",
+        0
+      ],
+      "latent": [
+        "4975",
+        0
+      ],
+      "bypass": false,
+      "strength": 0.6
+    }
+  },
+  "4975": {
+    "class_type": "LTXVLatentUpsampler",
+    "inputs": {
+      "samples": [
+        "4845",
+        0
+      ],
+      "upscale_model": [
+        "4974",
+        0
+      ],
+      "vae": [
+        "3940",
+        2
+      ]
+    }
+  },
+  "4989": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+      "value": 24
+    }
+  },
+  "4988": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 121
+    }
+  },
+  "4981": {
+    "class_type": "GemmaAPITextEncode",
+    "inputs": {
+      "api_key": "",
+      "prompt": "pc game, console game, video game, cartoon, childish, ugly",
+      "use_bolt": false
+    }
+  },
+  "4010": {
+    "class_type": "LTXVAudioVAELoader",
+    "inputs": {
+      "ckpt_name": "ltx-2.3-22b-dev.safetensors"
+    }
+  },
+  "3940": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "ltx-2.3-22b-dev.safetensors"
+    }
+  },
+  "4922": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "3940",
+        0
+      ],
+      "lora_name": "ltxv/ltx2/ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
+      "strength_model": 0.5
+    }
+  },
+  "4974": {
+    "class_type": "LatentUpscaleModelLoader",
+    "inputs": {
+      "model_name": "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"
+    }
+  },
+  "4982": {
+    "class_type": "LTXAVTextEncoderLoader",
+    "inputs": {
+      "text_encoder": "comfy_gemma_3_12B_it.safetensors",
+      "ckpt_name": "ltx-2.3-22b-dev.safetensors",
+      "device": "default"
+    }
+  },
+  "4845": {
+    "class_type": "LTXVSeparateAVLatent",
+    "inputs": {
+      "av_latent": [
+        "4829",
+        0
+      ]
+    }
+  },
+  "4973": {
+    "class_type": "LTXVSeparateAVLatent",
+    "inputs": {
+      "av_latent": [
+        "4971",
+        0
+      ]
+    }
+  },
+  "4848": {
+    "class_type": "LTXVAudioVAEDecode",
+    "inputs": {
+      "samples": [
+        "4973",
+        1
+      ],
+      "audio_vae": [
+        "4010",
+        0
+      ]
+    }
+  },
+  "4849": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "4995",
+        0
+      ],
+      "audio": [
+        "4848",
+        0
+      ],
+      "fps": [
+        "4989",
+        0
+      ]
+    }
+  },
+  "4852": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "4849",
+        0
+      ],
+      "filename_prefix": "output",
+      "format": "auto",
+      "codec": "auto"
+    }
+  },
+  "4995": {
+    "class_type": "LTXVTiledVAEDecode",
+    "inputs": {
+      "vae": [
+        "3940",
+        2
+      ],
+      "latents": [
+        "4973",
+        0
+      ],
+      "horizontal_tiles": 2,
+      "vertical_tiles": 2,
+      "overlap": 6,
+      "last_frame_fix": false
+    }
+  },
+  "2483": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "4982",
+        0
+      ],
+      "text": "Starting from the spiraling mahogany walkway. 0-6s: The bookish adventurer winds the key on her mechanical lantern; it flares to life with a warm cognac glow that pushes amber light across the polished mahogany and brass railings. She looks up the spiraling atrium. Camera is low-angle looking up the spiral, slowly craning upward to reveal the impossible vertical scale of living bookshelves stretching into warm golden haze. Three leather-bound books with paper wings flutter past in the foreground, leaving trails of warm parchment-light that fade like sparkler embers. Her expression: quiet anticipation, eyes widening slightly, pupils catching the lantern flare.\n\n6-14s: She begins walking up the spiraling walkway. The camera tracks beside her at medium distance while simultaneously craning upward, creating a spiraling camera path that mirrors the architecture. Dozens of books take flight from the shelves, their paper wings beating with overlapping action on staggered timing\u2014each book moves on a slightly different flutter rhythm, creating a living swarm rather than synchronized movement. The books leave ink-sparkle trails that swirl in the warm air. Dust motes dance in the light beams, each mote on its own lazy independent drift path. Her hair and messenger bag strap bounce with follow-through motion lagging 4 frames behind her stride. She reaches out to let a small poetry book brush her fingertips, and it leaves a smudge of warm gold ink on her skin that glows faintly.\n14-20s: She stops at a brass railing, leaning over to look down into the infinite depth below. The camera pushes in past her shoulder to reveal the vertiginous drop, then whips back up as a massive atlas-book with broad paper wings swoops down from the upper shelves. Its wing-shadow flits across the stained-glass window, momentarily darkening the ruby and amber geometric patterns cast across the floor and her face. She gasps\u2014expression shifting from awe to pure wonder\u2014and reaches out. The atlas hovers, pages riffling with secondary motion, releasing a burst of ink-sparkles that catch the lantern light and glow like warm fireflies in the cognac-toned air.\n20-25s: The camera slowly orbits 60 degrees around her as she raises the lantern toward the hovering atlas. The lantern's warm glow and the stained-glass ruby/amber patterns mix on her face, creating dynamic color bleeding that shifts across her skin as the orbit progresses. She smiles, a crooked, curious grin. The ink-sparkles spiral around the lantern in a helix formation, their light reflecting in her large expressive eyes. Camera dollies in for an extreme close-up of her eyes, which reflect the infinite spiraling bookshelves above. A single dust mote drifts through the frame in foreground, shallow depth of field keeping it creamy. Final hold: the mechanical lantern ticks softly, its glow pulsing once, and a distant rolling ladder rumbles along its brass track."
+    }
+  },
+  "2004": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "example.png"
+    }
+  },
+  "4987": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": {
+      "value": true
+    }
+  },
+  "5000": {
+    "class_type": "LTXFloatToInt",
+    "inputs": {
+      "a": 0
+    }
+  },
+  "9990": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "2004",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 1536,
+      "height": 1536,
+      "crop": "disabled"
+    }
+  },
+  "9001": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "1241",
+        0
+      ]
+    }
+  }
+}
