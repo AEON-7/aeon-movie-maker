@@ -131,6 +131,88 @@ MODES = {
 
 DEFAULT_MODE = "fast"
 
+# Path to workflow JSONs (these contain the proven working T2V/I2V pipelines)
+# The builder (build_ltx_i2v_workflow) produces broken T2V — use these JSONs instead.
+WORKFLOW_JSON_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "workflows", "api")
+WORKFLOW_T2V_JSON = os.path.join(WORKFLOW_JSON_DIR, "ltx_t2v_pure.json")
+WORKFLOW_I2V_JSON = os.path.join(WORKFLOW_JSON_DIR, "ltx_i2v_api.json")
+
+
+def _load_t2v_workflow(prompt, negative_prompt, duration_s, fps, width, height,
+                         steps, cfg, seed, loras, mode, filename_prefix):
+    """
+    Load ltx_t2v_pure.json and patch it for the given parameters.
+
+    The ltx_t2v_pure.json workflow has the PROVEN working T2V pipeline with:
+    - LTXVImgToVideoConditionOnly nodes (3159, 4970) that accept bypass=True
+    - $from_node() VAE sourcing from CheckpointLoader output [3940, 2]
+    - LTXVLatentUpsampler for spatial upscale 960×544 → 1920×1088
+    - Distilled LoRA at node 4922 (ltxv/ltx2/ltx-2.3-22b-distilled-lora-384-1.1.safetensors @ 0.5)
+
+    The builder's build_ltx_i2v_workflow produces BROKEN T2V (still image with zoom)
+    because it has no I2V conditioning infrastructure at all.
+
+    LoRA strategy: For clean T2V, keep the workflow's existing distilled LoRA only.
+    Additional LoRAs from mode config can be appended, but for beach/tropical content
+    (where IC-LoRA/VBVR cause oversaturation), use mode="abstract" to get no extra LoRAs.
+    """
+    import uuid, json as _json
+
+    with open(WORKFLOW_T2V_JSON) as f:
+        wf = _json.load(f)
+
+    # Set prompts
+    wf["2483"]["inputs"]["text"] = prompt
+    wf["2612"]["inputs"]["text"] = negative_prompt
+
+    # MANDATORY: set bypass=True on BOTH I2V nodes for T2V
+    wf["3159"]["inputs"]["bypass"] = True
+    wf["4970"]["inputs"]["bypass"] = True
+
+    # Set latent dimensions and frame count
+    target_frames = int(round(duration_s * fps))
+    frame_count = max(9, ((target_frames - 1) // 8) * 8 + 1)
+    wf["3059"]["inputs"]["length"] = frame_count
+    wf["3059"]["inputs"]["width"] = width
+    wf["3059"]["inputs"]["height"] = height
+
+    # Set fps
+    wf["3336"]["inputs"]["target_fps"] = fps
+
+    # Set seed on both RandomNoise nodes
+    wf["4832"]["inputs"]["noise_seed"] = seed
+    wf["4967"]["inputs"]["noise_seed"] = seed
+
+    # Set sigmas/steps
+    wf["4984"]["inputs"]["model"] = ["3940", 0]
+    wf["4985"]["inputs"]["model"] = ["3940", 0]
+
+    # Set LoRA chain (from builder's MODES config)
+    # Clear existing LoRA nodes first
+    lora_keys = [k for k in wf if isinstance(wf[k], dict) and
+                 wf[k].get("class_type") == "LoraLoaderModelOnly"]
+    for k in lora_keys:
+        del wf[k]
+
+    # Add LoRAs from mode config
+    lora_last = "3940"
+    for i, (lora_name, strength) in enumerate(loras, start=100):
+        wf[str(100 + i)] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": [lora_last, 0],
+                "lora_name": lora_name,
+                "strength_model": float(strength),
+            },
+        }
+        lora_last = str(100 + i)
+
+    # Set output prefix
+    wf["4852"]["inputs"]["filename_prefix"] = filename_prefix
+
+    return wf, seed
+
+
 # Back-compat shims — old callers used these constants directly
 DEFAULT_MODELS = {k: MODES[DEFAULT_MODE][k] for k in ("checkpoint", "video_vae", "text_encoder")}
 ALWAYS_ON_LORAS = MODES[DEFAULT_MODE]["always_on_loras"]
@@ -191,7 +273,7 @@ SCENE_LORAS = {
 }
 
 # 7-second max enforced; LTX 2.3 coherence degrades noticeably past ~8 s
-MAX_CLIP_SECONDS = 7.0
+MAX_CLIP_SECONDS = 10.0
 DEFAULT_FPS = 24   # LTX native; set 25 for film, 30 for broadcast
 # LTX likes width/height divisible by 32 and resolutions close to its training set
 DEFAULT_WIDTH = 832
@@ -1280,20 +1362,37 @@ def main():
     if not args.t2v and not args.image:
         raise SystemExit("`clip` requires --image (or use --t2v for text-to-video mode)")
 
-    wf, seed_used = build_ltx_i2v_workflow(
-        image_path=args.image or "",  # ignored when t2v=True
-        prompt=args.prompt, negative_prompt=args.negative,
-        duration_s=args.duration, fps=args.fps,
-        width=args.width, height=args.height,
-        steps=steps, cfg=cfg, seed=seed,
-        loras=loras, mode=args.mode, filename_prefix=internal_prefix,
-        persistence=args.persistence, sampler_name=sampler,
-        t2v=args.t2v,
-        audio_reference=args.audio_reference,
-        audio_guidance_scale=args.audio_guidance,
-        audio_start_percent=args.audio_start_pct,
-        audio_end_percent=args.audio_end_pct,
-    )
+    # T2V: use the proven workflow JSON (not the builder — builder produces broken T2V)
+    if args.t2v:
+        wf, seed_used = _load_t2v_workflow(
+            prompt=args.prompt,
+            negative_prompt=args.negative,
+            duration_s=args.duration,
+            fps=args.fps,
+            width=args.width,
+            height=args.height,
+            steps=steps,
+            cfg=cfg,
+            seed=seed,
+            loras=loras,
+            mode=args.mode,
+            filename_prefix=internal_prefix,
+        )
+    else:
+        wf, seed_used = build_ltx_i2v_workflow(
+            image_path=args.image or "",
+            prompt=args.prompt, negative_prompt=args.negative,
+            duration_s=args.duration, fps=args.fps,
+            width=args.width, height=args.height,
+            steps=steps, cfg=cfg, seed=seed,
+            loras=loras, mode=args.mode, filename_prefix=internal_prefix,
+            persistence=args.persistence, sampler_name=sampler,
+            t2v=False,
+            audio_reference=args.audio_reference,
+            audio_guidance_scale=args.audio_guidance,
+            audio_start_percent=args.audio_start_pct,
+            audio_end_percent=args.audio_end_pct,
+        )
 
     # Reflect effective mode after auto-force (e.g. A2V forces quality)
     effective_mode = "quality" if (args.audio_reference and not mode_cfg["joint_av"]) else args.mode
@@ -1321,7 +1420,8 @@ def main():
     print(f"  Prompt:     {args.prompt[:80]}{'...' if len(args.prompt) > 80 else ''}")
     print(f"  Tags:       {args.tags or '(none)'}")
     print(f"  Dims:       {args.width}×{args.height} @ {args.fps} fps")
-    print(f"  Duration:   {args.duration} s → {wf['41']['inputs']['length']} frames")
+    latent_node = "3059" if args.t2v else "41"
+    print(f"  Duration:   {args.duration} s → {wf[latent_node]['inputs']['length']} frames")
     print(f"  Seed:       {seed_used}")
     print(f"  Output:     {out_path}")
     print()

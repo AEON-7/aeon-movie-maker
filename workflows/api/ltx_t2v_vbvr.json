@@ -1,0 +1,127 @@
+{
+  "3": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "LTXAVTextEncoderLoader",
+    "inputs": {
+      "text_encoder": "comfy_gemma_3_12B_it.safetensors",
+      "ckpt_name": "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+      "device": "default"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLTXVLatentVideo",
+    "inputs": {
+      "length": 128,
+      "width": 960,
+      "height": 544,
+      "batch_size": 1
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "",
+      "clip": ["$from_node(4, 0)", 0]
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "blurry, low quality, distorted, watermark, bad anatomy, ugly, deformed",
+      "clip": ["$from_node(4, 0)", 0]
+    }
+  },
+  "8": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": ["$from_node(6, 0)", 0],
+      "negative": ["$from_node(7, 0)", 0],
+      "frame_rate": 24
+    }
+  },
+  "9": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 12345,
+      "seed_gen_type": "fixed"
+    }
+  },
+  "10": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": ["$from_node(14, 0)", 0],
+      "positive": ["$from_node(8, 0)", 0],
+      "negative": ["$from_node(12, 0)", 0],
+      "cfg": 1
+    }
+  },
+  "11": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler_cfg_pp"
+    }
+  },
+  "12": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": ["$from_node(8, 0)", 0]
+    }
+  },
+  "13": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+    }
+  },
+  "14": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["$from_node(3, 0)", 0],
+      "lora_name": "Ltx2.3-Licon-VBVR-I2V-240K-R32.safetensors",
+      "strength_model": 1.0
+    }
+  },
+  "15": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["$from_node(14, 0)", 0],
+      "lora_name": "ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors",
+      "strength_model": 1.0
+    }
+  },
+  "16": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["$from_node(9, 0)", 0],
+      "guider": ["$from_node(10, 0)", 0],
+      "sampler": ["$from_node(11, 0)", 0],
+      "sigmas": ["$from_node(13, 0)", 0],
+      "latent_image": ["$from_node(5, 0)", 0]
+    }
+  },
+  "17": {
+    "class_type": "LTXVTiledVAEDecode",
+    "inputs": {
+      "vae": ["$from_node(3, 0)", 2],
+      "latents": ["$from_node(16, 0)", 0],
+      "horizontal_tiles": 2,
+      "vertical_tiles": 2,
+      "overlap": 6,
+      "last_frame_fix": false
+    }
+  },
+  "18": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": ["$from_node(17, 0)", 0],
+      "filename_prefix": "beach_v11",
+      "format": "mp4",
+      "codec": "h264"
+    }
+  }
+}
