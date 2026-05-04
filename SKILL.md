@@ -13,6 +13,14 @@ description: >
 
 # Movie Maker Fast — LTX 2.3 cinematic video pipeline
 
+> 📖 **For execution**, read [AGENTS.md](AGENTS.md) first — it has the
+> glossary, decision tree, literal copy-pasteable recipes, and a
+> troubleshooting table optimized for AI agents. **This file (SKILL.md)
+> is the deep-dive reference** for prompt-engineering recipes,
+> chunking strategy details, and advanced configuration. Use SKILL.md
+> when you need to understand *why* something works the way it does;
+> use AGENTS.md when you just need to *do* the thing.
+
 > Companion to `radio-drama-production` (audio only), `music-producer` (standalone music), and `tts-voice-designer` (voice casting). This skill is the **video engine**; it imports all three of those for the audio passes.
 
 ## 0. Target host + tool
