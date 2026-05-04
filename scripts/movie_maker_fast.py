@@ -41,7 +41,7 @@ Models (canonical comfyui-aeon-spark asset layout — see download_models.py for
   Union LoRA:     models/loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors
   VBVR LoRA:      models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors
 """
-import argparse, json, os, random, shutil, subprocess, sys, tempfile, time
+import argparse, json, math, os, random, shutil, subprocess, sys, tempfile, time
 import urllib.request, urllib.error, urllib.parse
 
 try:
@@ -931,10 +931,22 @@ def build_ltx_prompt_relay_workflow(
         # T2V: skip image conditioning, feed empty latent straight into the concat
         video_latent_for_concat = ["110", 0]
 
+    # Audio frame count must match video DURATION, not video frame count.
+    # The LTX audio codec runs at a fixed 25 Hz internal rate, independent of
+    # the video fps. Passing total_frames to BOTH the video latent (whose rate
+    # is `fps`, typically 24) and the audio latent (rate 25) under-budgets audio
+    # by (1 - fps/25) — about 4% short at 24 fps. That ~300ms gap at the end
+    # of every sequence chops the last word of any sentence whose final
+    # syllables fall in the last beat. Bump the audio frame count to match
+    # the video's wall-time duration. (Canonical example workflow ships at
+    # 25 fps so video_frames == audio_frames worked there; non-25fps content
+    # needs this correction.)
+    LTX_AUDIO_FPS = 25
+    audio_frames_number = max(1, math.ceil(total_frames * LTX_AUDIO_FPS / float(fps)))
     wf["114"] = {"class_type": "LTXVEmptyLatentAudio",
                  "inputs": {
-                     "frames_number": int(total_frames),
-                     "frame_rate": 25,  # audio frame rate fixed to LTX's 25 Hz codec
+                     "frames_number": int(audio_frames_number),
+                     "frame_rate": LTX_AUDIO_FPS,
                      "batch_size": 1,
                      "audio_vae": ["105", 0],
                  }}
@@ -1992,6 +2004,162 @@ def stitch_clips(manifest_path, *,
 
 
 # ============================================================================
+# concat-relay — assemble Prompt Relay sequence MP4s into a final film
+# ============================================================================
+#
+# The screenplay --use-relay flow produces N joint-A/V mp4s under
+# output/movie_fast/<project>/sequence_NNN_*.mp4. This function joins them
+# into ONE film, optionally with crossfade dissolves at boundaries (much
+# smoother than hard concat) and optionally also producing a yuv444p10le
+# master sibling for color grading / archival.
+#
+# Encoding choices for the dist output (UNIVERSAL playback compatibility):
+#   - h264 High profile @ Level 4.0 (h264 reference-implementation supports
+#     this everywhere; max_bitrate / max_dpb_size all in spec for any decoder)
+#   - yuv420p 8-bit color (rejected by some browsers/QuickTime when 4:4:4 or
+#     4:2:2; 4:2:0 is the universal baseline)
+#   - +faststart MOOV atom relocation (browsers can begin playback before the
+#     full file downloads — required for any web embed)
+#
+# Encoding choices for the master sibling (when --master flag is set):
+#   - yuv444p10le (full color resolution + 10-bit precision, ~3-5x file size)
+#   - High 4:4:4 Predictive 10 profile
+#   - Suitable as the source for color grading or further compositing — does
+#     NOT make the video HDR (the underlying LTX 2.3 output is SDR-trained;
+#     yuv444p10le here is preserving fidelity, not adding HDR data the model
+#     never produced).
+def concat_relay_sequences(*, input_dir, glob_pat="sequence_*.mp4",
+                           output_path, xfade_s=0.0, master=False, crf=18):
+    import glob as _glob
+    files = sorted(_glob.glob(os.path.join(input_dir, glob_pat)))
+    if not files:
+        raise SystemExit(f"No files matched {os.path.join(input_dir, glob_pat)}")
+
+    print(f"=== concat-relay ===")
+    print(f"  input dir : {input_dir}")
+    print(f"  glob      : {glob_pat}")
+    print(f"  files     : {len(files)} sequences")
+    for f in files:
+        print(f"    {os.path.basename(f)}")
+    print(f"  output    : {output_path}")
+    print(f"  xfade     : {xfade_s} s")
+    print(f"  master    : {'yes — yuv444p10le sibling' if master else 'no — only distribution'}")
+    print(f"  crf       : {crf}")
+    print()
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+    if xfade_s > 0 and len(files) > 1:
+        # xfade flow — must re-encode (filter pipeline)
+        # Build the cumulative xfade graph: chain through each pair.
+        # Each xfade input is (durations_so_far - xfade) since xfade overlaps.
+        durations = [_probe_duration(f) for f in files]
+        # Build filter graph: progressively xfade clip i+1 onto the running result
+        filter_parts = []
+        last_v, last_a = "0:v", "0:a"
+        cumulative_offset = 0.0
+        for i in range(1, len(files)):
+            cumulative_offset += durations[i-1] - xfade_s
+            v_out = f"v{i}"
+            a_out = f"a{i}"
+            filter_parts.append(
+                f"[{last_v}][{i}:v]xfade=transition=fade:duration={xfade_s}:offset={cumulative_offset}[{v_out}]"
+            )
+            filter_parts.append(
+                f"[{last_a}][{i}:a]acrossfade=d={xfade_s}[{a_out}]"
+            )
+            last_v, last_a = v_out, a_out
+        filter_complex = ";".join(filter_parts)
+
+        ffmpeg_inputs = []
+        for f in files:
+            ffmpeg_inputs.extend(["-i", f])
+
+        # Distribution encode: yuv420p, High@L4.0, faststart
+        dist_cmd = [
+            "ffmpeg", "-y",
+            *ffmpeg_inputs,
+            "-filter_complex", filter_complex,
+            "-map", f"[{last_v}]", "-map", f"[{last_a}]",
+            "-c:v", "libx264", "-preset", "fast", "-crf", str(crf),
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.0",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+        print(f"[concat-relay] running xfade encode → {output_path}")
+        subprocess.run(dist_cmd, check=True)
+        print(f"[concat-relay] ✓ distribution: {os.path.getsize(output_path)/1024/1024:.1f} MB")
+
+        if master:
+            master_path = os.path.splitext(output_path)[0] + "_master.mp4"
+            master_cmd = [
+                "ffmpeg", "-y",
+                *ffmpeg_inputs,
+                "-filter_complex", filter_complex,
+                "-map", f"[{last_v}]", "-map", f"[{last_a}]",
+                "-c:v", "libx264", "-preset", "slow", "-crf", str(max(crf - 4, 12)),
+                "-pix_fmt", "yuv444p10le",
+                # H.264 High 4:4:4 Predictive 10
+                "-profile:v", "high444", "-level", "4.0",
+                "-c:a", "aac", "-b:a", "256k",
+                "-movflags", "+faststart",
+                master_path,
+            ]
+            print(f"[concat-relay] running master encode → {master_path}")
+            subprocess.run(master_cmd, check=True)
+            print(f"[concat-relay] ✓ master      : {os.path.getsize(master_path)/1024/1024:.1f} MB")
+    else:
+        # Hard cuts — fastest path, just concat demuxer
+        # Even hard cuts get a re-encode if --master is set (different codec settings)
+        concat_path = os.path.join(os.path.dirname(output_path) or ".", ".concat.txt")
+        with open(concat_path, "w") as f:
+            for fp in files:
+                f.write(f"file '{os.path.abspath(fp)}'\n")
+
+        if master:
+            # When master is requested, both outputs need re-encoding (different pix_fmts)
+            print(f"[concat-relay] hard-cut concat with master → re-encoding both outputs")
+            for out_path, pix_fmt, profile, preset, this_crf, ab in [
+                (output_path, "yuv420p", "high", "fast", crf, "192k"),
+                (os.path.splitext(output_path)[0] + "_master.mp4",
+                 "yuv444p10le", "high444", "slow", max(crf - 4, 12), "256k"),
+            ]:
+                cmd = [
+                    "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_path,
+                    "-c:v", "libx264", "-preset", preset, "-crf", str(this_crf),
+                    "-pix_fmt", pix_fmt, "-profile:v", profile, "-level", "4.0",
+                    "-c:a", "aac", "-b:a", ab,
+                    "-movflags", "+faststart",
+                    out_path,
+                ]
+                subprocess.run(cmd, check=True)
+                print(f"[concat-relay] ✓ {os.path.basename(out_path)}: {os.path.getsize(out_path)/1024/1024:.1f} MB")
+        else:
+            # Cheapest path: copy codec, no re-encode
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_path,
+                "-c", "copy", output_path,
+            ]
+            subprocess.run(cmd, check=True)
+            print(f"[concat-relay] ✓ distribution (copy): {os.path.getsize(output_path)/1024/1024:.1f} MB")
+        try: os.remove(concat_path)
+        except Exception: pass
+
+    return output_path
+
+
+def _probe_duration(path):
+    """ffprobe a media file's duration in seconds (float)."""
+    r = subprocess.run(
+        [FFPROBE, "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=nw=1:nk=1", path],
+        capture_output=True, text=True, check=True,
+    )
+    return float(r.stdout.strip())
+
+
+# ============================================================================
 # CLI — single-clip render for Phase 1, screenplay for Phase 2, stitch for Phase 3
 # ============================================================================
 
@@ -2144,6 +2312,33 @@ def main():
     pst.add_argument("--sfx-volume", type=float, default=0.8)
     pst.add_argument("--lufs", type=float, default=-16.0)
 
+    # ── concat-relay: concatenate Prompt Relay sequence MP4s into a final film ─
+    # Different shape from `stitch` (which uses a clips_manifest + per-track
+    # audio masters). concat-relay assumes each input mp4 is already joint A/V
+    # (the relay flow's output) and just smooths the boundaries between them.
+    pcr = sub.add_parser("concat-relay",
+        help="Concatenate a directory of Prompt Relay sequence MP4s into one film, "
+             "optionally with crossfade dissolves at boundaries + a master sibling.")
+    pcr.add_argument("--input-dir", "-i", required=True,
+        help="Directory containing sequence_*.mp4 files (or a custom glob via --glob).")
+    pcr.add_argument("--glob", default="sequence_*.mp4",
+        help="Filename glob within --input-dir (default: 'sequence_*.mp4').")
+    pcr.add_argument("--output", "-o", required=True,
+        help="Output path for the distribution MP4 (yuv420p H.264 High@L4.0, +faststart). "
+             "If --master is set, a sibling <basename>_master.mp4 is also written.")
+    pcr.add_argument("--xfade", type=float, default=0.0,
+        help="Crossfade duration in seconds between adjacent sequences (both video and "
+             "audio). 0.0 = hard cuts (concat demuxer + -c copy, fastest); typical smoothing "
+             "values are 0.5-1.0. Higher than 1.5 starts to feel sluggish.")
+    pcr.add_argument("--master", action="store_true",
+        help="ALSO write a master sibling at <output_basename>_master.mp4 in yuv444p10le "
+             "(full-color, 10-bit) — useful as an archival / colorgrade source. The "
+             "distribution output (--output) is always yuv420p 8-bit for universal "
+             "playback. Both have the same xfade boundaries.")
+    pcr.add_argument("--crf", type=int, default=18,
+        help="x264 quality (lower = better, 0=lossless). Default 18 = visually lossless. "
+             "Range 16-23 for production work.")
+
     args = p.parse_args()
 
     # Default to 'clip' for back-compat if no subcommand given
@@ -2206,6 +2401,14 @@ def main():
             dialogue_wav=args.dialogue, music_wav=args.music, sfx_wav=args.sfx,
             xfade_s=args.xfade, music_volume=args.music_volume,
             sfx_volume=args.sfx_volume, lufs=args.lufs,
+        )
+        return
+
+    if args.cmd == "concat-relay":
+        concat_relay_sequences(
+            input_dir=args.input_dir, glob_pat=args.glob,
+            output_path=args.output, xfade_s=args.xfade,
+            master=args.master, crf=args.crf,
         )
         return
 

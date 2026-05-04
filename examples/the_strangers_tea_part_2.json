@@ -1,0 +1,243 @@
+{
+  "title": "the_strangers_tea_part_2",
+  "style": "cinematic, golden-hour photography, photorealistic faces with natural skin texture, IMAX-quality, lush warm color palette of saffron and crimson and gold, soft afternoon light filtering through carved screens, intimate dialogue framing, natural fabric motion in the breeze",
+
+  "setting": "the same vibrant Middle Eastern palace courtyard from before — ornate geometric blue and gold tile work, marble fountain with running water, painted wooden doors studded with brass, hanging copper lanterns casting warm light, bougainvillea climbing the stone walls, late golden hour deepening into sunset then dusk, distant call to prayer faint in the air",
+
+  "characters": {
+    "DANIEL": "Western man in his early thirties, light olive skin, neatly trimmed dark beard, tousled chestnut-brown hair, wearing a wrinkled beige linen shirt with sleeves rolled up, dark canvas trousers, scuffed brown leather boots, a worn brown leather messenger bag across his shoulder, expression curious and slightly weary, kind eyes",
+    "LEILA": "Middle Eastern woman in her late twenties, warm olive skin, long dark wavy hair partially covered by a colorful patterned headscarf in deep red and gold, large kohl-lined dark eyes, wearing a flowing crimson and gold embroidered kaftan with intricate floral patterns, small gold hoop earrings, calm confident posture, gentle knowing smile",
+    "HASSAN": "Middle Eastern man in his mid-thirties, warm olive skin similar to Leila's, clean-shaven sharp jaw, short dark hair neatly combed, wearing a sleek modern grey business suit with a crisp white shirt and gold cufflinks, sophisticated but conflicted expression, the family resemblance to Leila visible in his dark eyes"
+  },
+
+  "scenes": [
+    {
+      "description": "Wide shot of Daniel and Leila still seated at the low brass tea table in the palace courtyard, the open photograph between them, golden sunset light pouring through carved screens overhead casting filigree patterns. Leila looks down at the photograph then up at Daniel with a more serious expression",
+      "camera": "static wide shot, slow gentle push-in",
+      "duration": 4.0,
+      "characters": ["LEILA", "DANIEL"]
+    },
+    {
+      "description": "Close-up on Leila's face as she speaks softly. After speaking she looks down at her hands folded in her lap. The fountain still runs gently in the background",
+      "camera": "medium close-up on Leila",
+      "duration": 4.0,
+      "characters": ["LEILA"],
+      "dialogue": [{"character": "LEILA", "line": "There is more I must tell you, Daniel."}]
+    },
+    {
+      "description": "Two-shot of Daniel and Leila at the table. Daniel sets down his tea cup carefully and leans forward attentively. Leila glances toward the courtyard wall, gathering herself",
+      "camera": "intimate two-shot, eye level",
+      "duration": 4.0,
+      "characters": ["LEILA", "DANIEL"],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Wide shot of Leila standing up gracefully from the table, her crimson kaftan flowing as she moves toward the carved courtyard wall, golden light catching her hair. After speaking she turns slowly to face Daniel, her expression pained",
+      "camera": "wide shot following her movement",
+      "duration": 5.0,
+      "characters": ["LEILA"],
+      "dialogue": [{"character": "LEILA", "line": "My brother has sold his share. They come tomorrow to take the palace."}]
+    },
+    {
+      "description": "Close on Daniel as he stands up from the table, his expression shifting to concerned determination. He takes a step forward toward Leila. After speaking he runs a hand through his hair",
+      "camera": "medium close-up on Daniel, slight push-in",
+      "duration": 5.0,
+      "characters": ["DANIEL"],
+      "dialogue": [{"character": "DANIEL", "line": "Tomorrow? But surely there is something we can do."}],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Two-shot. Leila approaches Daniel slowly. The light fades from gold toward amber. Her dark eyes meet his with hope and pleading. After speaking she touches his arm gently",
+      "camera": "intimate two-shot, slow push-in",
+      "duration": 5.0,
+      "characters": ["LEILA", "DANIEL"],
+      "dialogue": [{"character": "LEILA", "line": "Your grandfather. He left something here. A thing that could save us all."}]
+    },
+    {
+      "description": "Close-up on Daniel as he opens his worn leather messenger bag. He carefully pulls out a stack of old folded letters bound together with brown twine, the paper yellowed and creased with age. After speaking he unties the bundle slowly",
+      "camera": "tight close-up on Daniel and the letters",
+      "duration": 5.0,
+      "characters": ["DANIEL"],
+      "dialogue": [{"character": "DANIEL", "line": "I brought his letters with me. There were always things he never explained."}],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Two-shot of Daniel and Leila huddled close together over a single yellowed letter held between them. The deep golden light catches the elegant handwriting on the page. Daniel reads aloud slowly. After speaking they look at each other in shared recognition",
+      "camera": "intimate two-shot from above looking down at the letter",
+      "duration": 5.0,
+      "characters": ["DANIEL"],
+      "dialogue": [{"character": "DANIEL", "line": "He wrote of a brass cylinder. Hidden where only family would look."}]
+    },
+    {
+      "description": "Wide cinematic shot of Daniel and Leila walking purposefully together through an ornate corridor of the palace. Late golden light streams sideways through arched windows casting long warm shadows. Old painted wooden beams overhead, intricate mosaic walls. Their footsteps echo softly on the marble tiles",
+      "camera": "tracking shot following them from behind",
+      "duration": 4.0,
+      "characters": ["LEILA", "DANIEL"],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Medium shot. They reach an old narrow wooden door at the end of the corridor, dark with age and studded with iron. Leila lifts an antique iron key from a chain at her belt and inserts it into the lock. The lock turns with a heavy thunk",
+      "camera": "medium shot, slight angle",
+      "duration": 4.0,
+      "characters": ["LEILA", "DANIEL"]
+    },
+    {
+      "description": "Wide reveal of a small dimly-lit archive room: walls lined with old wooden chests, brass-bound trunks stacked high, dusty shelves of yellowed papers and rolled scrolls, a single shaft of golden light falling from a small high window cutting through dust motes. Daniel and Leila step inside in wonder",
+      "camera": "wide reveal pulling back as the door opens",
+      "duration": 4.0,
+      "characters": ["LEILA", "DANIEL"],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Close on Leila's hands as she opens an old leather-bound journal, the pages cracked and stained. She runs a finger reverently along the elegant handwritten Arabic script. After speaking she looks up at Daniel with tears in her eyes",
+      "camera": "tight close-up on the journal then push to her face",
+      "duration": 5.0,
+      "characters": ["LEILA"],
+      "dialogue": [{"character": "LEILA", "line": "My grandfather wrote here of his American friend. Their pact to protect this place forever."}]
+    },
+    {
+      "description": "Two-shot inside the archive. Daniel approaches Leila by the journal, his hand reaches gently for hers. The deep amber light catches them both. After speaking they share a long quiet moment of connection",
+      "camera": "intimate two-shot, eye level",
+      "duration": 5.0,
+      "characters": ["DANIEL"],
+      "dialogue": [{"character": "DANIEL", "line": "Then together we will keep the promise they made."}],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Close-up on Daniel's hand as he carefully lifts down an old framed sepia photograph from the wall. Behind where the photograph hung — a small dark recessed niche in the stone wall, hidden for decades. Daniel's eyes widen with recognition",
+      "camera": "tight close-up on the niche reveal",
+      "duration": 4.0,
+      "characters": ["DANIEL"]
+    },
+    {
+      "description": "Medium shot of Daniel reaching into the dark niche and slowly drawing out a small ornate brass cylinder, dark with age and sealed with a circular disc of red wax bearing two intertwined family seals. He holds it up so Leila can see. After speaking he turns the cylinder slowly in the golden light",
+      "camera": "medium shot then push-in to the cylinder",
+      "duration": 5.0,
+      "characters": ["DANIEL"],
+      "dialogue": [{"character": "DANIEL", "line": "Leila. I think this is it."}],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Two-shot. Leila approaches Daniel and they look at the brass cylinder together, her hand gently touching his where he holds it. Soft amber light fills the small archive room. After she speaks they share a quiet moment of triumph and relief",
+      "camera": "intimate two-shot, slow push-in to their hands",
+      "duration": 5.0,
+      "characters": ["LEILA", "DANIEL"],
+      "dialogue": [{"character": "LEILA", "line": "He kept his promise. He kept it for us."}]
+    },
+    {
+      "description": "Wide shot of the palace courtyard from inside, looking toward the main brass-studded entrance doors. The doors swing open suddenly with a loud creak. HASSAN strides in confidently — sleek modern grey suit standing starkly against the ancient setting — flanked by TWO SILENT MEN in dark suits carrying official clipboards. The peacock startles and flies up",
+      "camera": "wide shot, low angle, dramatic entrance framing",
+      "duration": 4.0,
+      "characters": ["HASSAN"],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Medium shot of Hassan in the courtyard, looking around possessively at the palace. The TWO MEN behind him scan the space with their clipboards. The deepening sunset throws long sharp shadows. After speaking Hassan removes a folded document from his suit jacket",
+      "camera": "medium shot, slight low angle on Hassan",
+      "duration": 5.0,
+      "characters": ["HASSAN"],
+      "dialogue": [{"character": "HASSAN", "line": "Leila? The deeds are in order. We must finish this today."}]
+    },
+    {
+      "description": "Wide shot of Daniel and Leila emerging from the corridor into the courtyard. Daniel holds the brass cylinder in his hand, raised slightly. Hassan turns sharply at their entrance, surprise giving way to suspicion. The TWO MEN tense behind him",
+      "camera": "wide shot, then push-in to Daniel's hand holding the cylinder",
+      "duration": 4.0,
+      "characters": ["LEILA", "DANIEL", "HASSAN"],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Medium two-shot of Hassan facing Daniel and Leila. Hassan walks toward them slowly, his expression hardening. After speaking he glances at the cylinder in Daniel's hand with sudden curiosity",
+      "camera": "medium two-shot, eye level",
+      "duration": 5.0,
+      "characters": ["HASSAN"],
+      "dialogue": [{"character": "HASSAN", "line": "Who is this man? Leila, what is happening here?"}]
+    },
+    {
+      "description": "Close on Daniel as he raises the brass cylinder higher between them, the red wax seal catching the last sunset light. He holds it steady, his expression calm but firm. After speaking he slowly extends the cylinder forward toward Hassan",
+      "camera": "close-up on Daniel and the cylinder, sharp focus on the wax seal",
+      "duration": 5.0,
+      "characters": ["DANIEL"],
+      "dialogue": [{"character": "DANIEL", "line": "I think this belongs to all three of us. Our grandfathers signed it together."}],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Medium shot of Daniel carefully breaking the red wax seal with his thumb. Pieces fall away. He uncorks the brass cylinder and slides out a rolled yellowed document. Hassan steps closer, his sleek suit incongruous against the ancient paper, his eyes narrowing with intense interest",
+      "camera": "medium shot, slow push-in to the document",
+      "duration": 5.0,
+      "characters": ["DANIEL", "HASSAN"]
+    },
+    {
+      "description": "Three-shot of Daniel, Leila, and Hassan standing together looking down at the unrolled document held flat between them. An old illustrated deed with elaborate calligraphy and TWO ornate family seals at the bottom in red and gold ink. Late sunset light glowing on the paper. Leila reads aloud reverently after the visual establishment",
+      "camera": "tight three-shot, then push-in to the document",
+      "duration": 5.0,
+      "characters": ["LEILA"],
+      "dialogue": [{"character": "LEILA", "line": "Held in trust for both families, in perpetuity. Neither may sell without the other's consent."}],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Close-up on Hassan's face as the meaning sinks in. Confusion shifts slowly to memory shifts to dawning recognition. His sharp business expression softens. He looks up from the document, around the entire courtyard with completely new eyes — the fountain, the bougainvillea, the carved screens. After speaking he looks back at Leila with vulnerability",
+      "camera": "intense close-up on Hassan, slow rack focus",
+      "duration": 5.0,
+      "characters": ["HASSAN"],
+      "dialogue": [{"character": "HASSAN", "line": "I had forgotten. I had forgotten this place."}]
+    },
+    {
+      "description": "Medium two-shot of Hassan and Daniel facing each other for the first time as something other than enemies. Hassan extends his hand cautiously. After speaking his voice cracks slightly with emotion. Daniel takes his hand",
+      "camera": "medium two-shot, eye level intimacy",
+      "duration": 5.0,
+      "characters": ["HASSAN", "DANIEL"],
+      "dialogue": [{"character": "HASSAN", "line": "Your grandfather. He used to bring me sweets when I was a small boy."}],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Wide shot of the courtyard. The TWO MEN in dark suits behind Hassan exchange uncertain glances with their clipboards. Hassan turns to them and waves a hand dismissively. After speaking the men nod respectfully and turn to leave through the brass-studded doors",
+      "camera": "wide shot, the men retreating",
+      "duration": 5.0,
+      "characters": ["HASSAN"],
+      "dialogue": [{"character": "HASSAN", "line": "We are finished here. Leave us."}]
+    },
+    {
+      "description": "Wide cinematic shot of Hassan walking slowly to the central marble fountain, sunset light painting everything deep gold. He kneels and cups his hands in the running water, brings them to his face. The water glints in the deepening amber light",
+      "camera": "wide shot, slow gentle push-in",
+      "duration": 4.0,
+      "characters": ["HASSAN"],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Medium two-shot of Leila approaching Hassan at the fountain. They face each other for the first time as siblings reconciled. After Leila speaks she takes both his hands in hers. They embrace silently. Daniel watches from the background with a quiet respectful smile",
+      "camera": "medium two-shot, slow camera lift",
+      "duration": 5.0,
+      "characters": ["LEILA", "HASSAN"],
+      "dialogue": [{"character": "LEILA", "line": "It was always meant for all of us, Hassan."}]
+    },
+    {
+      "description": "Wide shot. Hassan turns from Leila and walks toward Daniel who stands holding the rolled deed against his chest. Hassan extends his hand again, this time with full warmth. After speaking Daniel takes the hand and they exchange a long look of new brotherhood",
+      "camera": "wide two-shot, eye level",
+      "duration": 5.0,
+      "characters": ["HASSAN", "DANIEL"],
+      "dialogue": [{"character": "HASSAN", "line": "Our grandfathers knew. They knew we would need each other."}],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Wide shot of all three — Daniel, Leila, Hassan — now sitting together at the low brass tea table in the courtyard. The brass cylinder open beside them, the unrolled deed laid flat between them. Late golden sunset deepening to amber. Steam rises from a fresh teapot. The fountain runs gently",
+      "camera": "wide shot, intimate composition",
+      "duration": 4.0,
+      "characters": ["DANIEL", "LEILA", "HASSAN"]
+    },
+    {
+      "description": "Final wide cinematic tableau. Daniel raises a small glass tea cup. Leila and Hassan raise theirs in unison. They share a silent toast in the deep golden light. Above them sunset embers drift slowly down from the bougainvillea. The carved screens cast long peaceful shadows across the table. The fountain water glints one last time",
+      "camera": "static wide cinematic shot, very slow gentle pull-back",
+      "duration": 5.0,
+      "characters": ["DANIEL", "LEILA", "HASSAN"],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Pull back further. Wide cinematic shot of the entire palace courtyard now in deep dusk. Hanging copper lanterns just beginning to glow from within. The three small figures still seated at the table. Stars beginning to appear above the carved screens. The first evening breeze stirs the bougainvillea petals",
+      "camera": "very wide overhead shot, slow gentle pull-back",
+      "duration": 4.0,
+      "characters": ["DANIEL", "LEILA", "HASSAN"]
+    }
+  ],
+
+  "negative_prompt": "music, background music, soundtrack, score, instruments, drums, drum beat, oud, lute, sitar, flute, percussion, melody, melodic, instrumental, ambient music, song, singing, chanting, deformed, mutilated, extra limbs, extra fingers, malformed face, blurry, low quality, watermark, text, subtitles, cartoon"
+}

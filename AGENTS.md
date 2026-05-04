@@ -301,11 +301,35 @@ This produces ONE mp4 per sequence (NOT per scene) plus a
 
 **Step 3: Concatenate the sequences into one film**
 
+Use the `concat-relay` subcommand (smoother than raw ffmpeg concat):
+
 ```bash
-cd output/movie_fast/my_dialogue_film
-ls sequence_*.mp4 | sed -E "s/^/file '/;s/$/'/" > concat.txt
-ffmpeg -f concat -safe 0 -i concat.txt -c copy MY_DIALOGUE_FILM.mp4
+# Hard cuts (fastest — instant, just remuxes; no quality loss)
+python scripts/movie_maker_fast.py concat-relay \
+  --input-dir output/movie_fast/my_dialogue_film \
+  -o output/movie_fast/my_dialogue_film/MY_DIALOGUE_FILM.mp4
+
+# OR with crossfade dissolves at sequence boundaries (requires re-encode,
+# but eliminates jarring jump-cuts. 0.5-1.0 sec is typical; default 0.0)
+python scripts/movie_maker_fast.py concat-relay \
+  --input-dir output/movie_fast/my_dialogue_film \
+  --xfade 0.8 \
+  -o output/movie_fast/my_dialogue_film/MY_DIALOGUE_FILM.mp4
+
+# OR also write a yuv444p10le master sibling for color grading / archival
+python scripts/movie_maker_fast.py concat-relay \
+  --input-dir output/movie_fast/my_dialogue_film \
+  --xfade 0.8 --master \
+  -o output/movie_fast/my_dialogue_film/MY_DIALOGUE_FILM.mp4
+# → produces both MY_DIALOGUE_FILM.mp4 (yuv420p, universal playback)
+#   and MY_DIALOGUE_FILM_master.mp4 (yuv444p10le, archival/grading source)
 ```
+
+**Important: `--master` does NOT mean HDR.** It produces a master copy with
+full-color resolution (4:4:4) and 10-bit depth — useful as a source for
+further editing or color grading. The underlying LTX 2.3 output is SDR
+(BT.709-like) regardless of which output you pick. True HDR requires a
+model trained for HDR-aware output (none currently exist).
 
 The final mp4 has dialogue audio embedded.
 
@@ -330,6 +354,9 @@ dialogue. Use this when the user wants a "real" cinematic film.
 **Step 1: Render the dialogue film** — follow Recipe C entirely. The
 top-level `negative_prompt` in the screenplay is critical here — it
 suppresses the model's bundled music so it doesn't fight with your score.
+For multi-sequence films, use `concat-relay --xfade 0.8` (Recipe C step 3)
+to smooth the boundaries — hard cuts between sequences are jarring without
+crossfade.
 
 **Step 2: Get the film duration** — you need this exact number for the
 music render:
@@ -432,7 +459,10 @@ command in the RIGHT column.
 | Output dialogue audio is just ambient noise (no speech) | The screenplay scenes lack dialogue. Add `dialogue: [{"character": "X", "line": "..."}]` to scenes. |
 | Output has music when you wanted no music | The screenplay's top-level `negative_prompt` doesn't suppress music. Add the music vocabulary from Recipe C step 1 critical rule #2. |
 | Output characters look mutilated / extra limbs / wrong faces | (a) Add stronger anatomy negatives to top-level `negative_prompt`. (b) Verify each character has a detailed VISUAL description in the `characters` dict. (c) If still bad, escalate to non-distilled model: this requires editing `movie_maker_fast.py` MODES dict — beyond agent scope, ask the human. |
-| Last dialogue line cut off at end of sequence | Add visual action AFTER the dialogue in the LAST scene of each sequence (e.g. `"After speaking, she sips her tea slowly"`). |
+| Last dialogue line cut off at end of sequence | (1) **Make sure the script is at HEAD** — pre-2026-05-04 versions had an audio-frame-budget bug where audio_frames was set equal to video_frames, but they're at different rates (24fps video vs 25Hz audio codec). Fixed in 5/4 commit; bumps audio frames by ~4% at 24fps so lines land cleanly. (2) Also add visual action AFTER the dialogue in the LAST scene of each sequence (e.g. `"After speaking, she sips her tea slowly"`) — model needs ~300-500ms of "tail" to land each line. |
+| Final mp4 plays in some apps but errors with "Unsupported encoding settings" / refuses to open | The xfade or any libx264 re-encode defaulted to **yuv444p / High 4:4:4 Predictive** profile (most consumer players reject this). Re-run with explicit `-pix_fmt yuv420p -profile:v high -level 4.0 -movflags +faststart`. The `concat-relay` subcommand sets these correctly by default for the distribution output. |
+| Want to save a master / archival copy alongside the distribution mp4 | Use `concat-relay --master` — also writes a `<basename>_master.mp4` in yuv444p10le (full color + 10-bit depth) suitable for color grading or further compositing. **Note: this is NOT HDR**, just higher-fidelity SDR. The model output is SDR regardless of encoding choice. |
+| User asks for "HDR output" | Politely explain: LTX 2.3 is SDR-trained. The model's output is in SDR color space (~BT.709). Encoding to yuv420p10le or yuv444p10le doesn't add HDR data — it just preserves more of the model's existing 8-bit-equivalent dynamic range. True HDR (BT.2020 + PQ/HLG transfer + 10-bit) requires an HDR-trained model, which doesn't exist for video diffusion yet. Offer master/dist split (`concat-relay --master`) as the closest alternative. |
 | `OSError: [Errno 28] No space left on device` | Tell the human their disk is full. Don't try to clean up files yourself. |
 | `OOM` / `out of memory` from ComfyUI | Tell the human ComfyUI ran out of GPU memory. They may need to restart ComfyUI or close other GPU programs. |
 

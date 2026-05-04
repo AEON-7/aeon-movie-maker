@@ -239,7 +239,17 @@ The 30-second TL;DR:
    includes `"music, soundtrack, score, instruments, drums, melody, ..."`
    plus standard anatomy negatives.
 2. `python scripts/movie_maker_fast.py screenplay <yours>.json --use-relay`
-3. Concat the per-sequence MP4s with `ffmpeg -f concat`.
+3. Concat the per-sequence MP4s. **Use the `concat-relay` subcommand** —
+   it handles xfade dissolves between sequences (much smoother than hard
+   cuts), bakes in safe encoder settings (yuv420p / High@L4.0 / faststart),
+   and can optionally produce a yuv444p10le master sibling for archival:
+
+   ```bash
+   python scripts/movie_maker_fast.py concat-relay \
+     --input-dir output/movie_fast/<project> \
+     --xfade 0.8 --master \
+     -o output/movie_fast/<project>/<PROJECT>.mp4
+   ```
 4. Compose a score in `aeon-music-maker` matching your film's duration,
    using `[section: ... N seconds]` tags keyed to your emotional beats.
 5. Mux: `ffmpeg -filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.28[a1];[a0][a1]amix..."`

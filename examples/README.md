@@ -23,8 +23,9 @@ to-end render testing on DGX Spark:
 
 | file | what it is | length | render time on Spark (canonical settings) |
 |---|---|---|---|
-| `the_strangers_tea.json` | Romantic-mystery short — Western traveler gets lost in a Middle Eastern medina, is found by a local woman, tea-ceremony reveal of intergenerational family connection. 12 scenes / 6 sequences / 52s. | 52 s | ~7 min |
-| `cosmic_guardians.json` | Mythological action — Vishnu and Shiva manifest to defend the cosmos, exchange brief dialogue. 6 scenes / 3 sequences / 22s. | 22 s | ~3 min |
+| `the_strangers_tea.json` | Romantic-mystery short — Western traveler gets lost in a Middle Eastern medina, is found by a local woman, tea-ceremony reveal of intergenerational family connection. **Act 1 / setup.** 12 scenes / 6 sequences / 52s. | 52 s | ~7 min |
+| `the_strangers_tea_part_2.json` | **Act 2-3 continuation** of the medina story — palace under threat from Leila's brother Hassan, Daniel and Leila search for grandfather's hidden inheritance, climactic confrontation in the courtyard, family reconciliation. 32 scenes / 16 sequences / 138s. Demonstrates 3-character dialogue + multi-act structure + the tack-on pattern (concatenate after part 1 → 3:10 full film). | 138 s | ~21 min |
+| `cosmic_guardians.json` | Mythological action — Vishnu and Shiva manifest to defend the cosmos, exchange brief dialogue. Single-act compact format. 6 scenes / 3 sequences / 22s. | 22 s | ~3 min |
 
 ## How to render
 
