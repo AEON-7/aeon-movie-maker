@@ -178,7 +178,8 @@ All non-last chunks auto-get the `transition` LoRA so the xfade stitcher has smo
 
 ## 6. Screenplay schema
 
-Compatible with `AGENT_CINEMA_AUTOPILOT` / `produce.py` output. Minimum viable scene:
+Compatible with `AGENT_CINEMA_AUTOPILOT` / `produce.py` output. Minimum
+viable scene (per-scene I2V flow):
 
 ```json
 {
@@ -203,13 +204,60 @@ Fields used by Movie Maker Fast:
 
 | Field | Required | Purpose |
 |---|---|---|
-| `source_image` / `image_path` / `image` | ✓ | Input image (relative to `input/`) |
+| `source_image` / `image_path` / `image` | ✓ for I2V flow | Input image (relative to `input/`); not required for `--use-relay` (relay does T2V on first scene of each sequence + carries last frame to subsequent sequences) |
 | `prompt` / `action` / `description` | ✓ (one of) | Text prompt for LTX |
 | `duration` / `duration_hint` | ✓ | Scene length in seconds; auto-chunks |
-| `tags` | optional | Explicit LoRA routing tags |
-| `mood` / `camera` / `style` | optional | Implicit tags (auto-prefixed `mood:` / `camera:` / `style:`) |
-| `characters` | optional | First entry is focal-character fallback |
-| `dialogue` | optional | First non-NARRATOR speaker drives focal character |
+| `tags` | optional | Explicit LoRA routing tags. Tag `transition` (or `cut` / `scene_change`) forces a new Prompt Relay sequence (hard cut) under `--use-relay` |
+| `mood` / `camera` / `style` | optional | Implicit tags (auto-prefixed `mood:` / `camera:` / `style:`); also forwarded into the relay prompt as natural-language suffixes |
+| `characters` | optional | List of names. Under `--use-relay`, the wrapper prompt looks up each name in the top-level `characters` dict (see below) and injects the visual description |
+| `dialogue` | optional | Forwarded into the relay prompt as `'CHARACTER says "line"'` patterns — this is what triggers LTX 2.3's joint-A/V dialogue + lipsync |
+| `relay_break: true` | optional | Force this scene to start a new Prompt Relay sequence (alternative to using a `transition` tag) |
+
+### Top-level fields specific to `--use-relay`
+
+```json
+{
+  "title": "my_film",
+  "style": "cinematic, golden-hour photography, photorealistic faces ...",
+  "setting": "vibrant Middle Eastern medina at golden hour ...",
+
+  "characters": {
+    "DANIEL": "Western man in his early thirties, light olive skin, neatly trimmed dark beard, wearing a wrinkled beige linen shirt ...",
+    "LEILA": "Middle Eastern woman in her late twenties, warm olive skin, long dark wavy hair partially covered by a colorful patterned headscarf in red and gold, wearing a flowing crimson and gold embroidered kaftan ..."
+  },
+
+  "negative_prompt": "music, soundtrack, score, instruments, drums, oud, sitar, melody, ambient music, deformed, mutilated, extra limbs, malformed face, blurry, low quality, watermark",
+
+  "scenes": [...]
+}
+```
+
+| Top-level field | Required | Purpose |
+|---|---|---|
+| `style` | recommended | Global style anchor; included in every sequence wrapper |
+| `setting` | recommended | Global setting; included in every sequence wrapper |
+| `characters` | recommended | **dict** mapping name → full visual description. Names alone don't anchor identity — the relay needs visual specificity. Falls back to a list-of-names format if no descriptions are available |
+| `negative_prompt` | recommended | CLIP-encoded as the negative conditioning. Suppresses model-generated music in joint A/V output (so you can compose your own score and mux underneath the dialogue) + suppresses anatomy artifacts. CLI `--relay-negative-prompt` overrides |
+
+### Authoring tips for the `--use-relay` flow
+
+- **End the LAST scene of each sequence with visual action AFTER the
+  dialogue line.** ("She lifts her cup and sips" / "He looks toward the
+  window") This gives the model time to land the audio cleanly within the
+  segment's frame budget. Without this, dialogue can clip at the segment
+  boundary.
+- **Add `tags: ["transition"]`** to scenes that genuinely need a hard cut
+  (different location, new character entering, time jump). Within a
+  sequence, scenes morph smoothly via the relay; between sequences,
+  there's a hard cut with the previous sequence's last frame as the seed
+  image of the next.
+- **Don't pack 2+ dialogue exchanges into one scene** — give each line its
+  own scene (or its own segment within a sequence). LTX 2.3 needs
+  ~2-3 seconds of segment time per spoken line for clean audio + lipsync.
+- **Visual descriptions in `characters` should be specific and physical**:
+  skin tone, hair color/style/length, eye color, distinctive clothing
+  with color, body type, expression. The wrapper carries these into every
+  sequence, so they're the strongest identity signal across hard cuts.
 
 ## 7. CLI
 
