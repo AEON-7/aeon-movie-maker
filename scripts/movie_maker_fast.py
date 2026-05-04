@@ -27,17 +27,17 @@ Pipeline:
        SFX:      radio_drama.generate_sfx() MMAudio → SAO → ACE priority
   6. Stitch with 0.8 s xfade between clips, sidechain-ducked music, loudnorm -16 LUFS.
 
-Models (all on disk, all verified working via LTX-2 I2V - With VBVR_EROS.json):
+Models (canonical comfyui-aeon-spark asset layout — see download_models.py for sources):
 
-  Base (fast):    models/checkpoints/ltx-2.3-22b-distilled-fp8.safetensors  (default)
-  Base (quality): models/checkpoints/ltx2/ltx-2.3-eros.safetensors          (user-supplied — not on canonical HF)
+  Base (fast):    models/checkpoints/ltx-2.3-22b-distilled-fp8.safetensors  (default — distilled FP8, fewer steps)
+  Base (quality): models/checkpoints/ltx-2.3-22b-dev-fp8.safetensors        (non-distilled FP8, more steps, higher fidelity)
   Video VAE:      models/vae/LTX23_video_vae_bf16.safetensors
   Text enc:       models/text_encoders/gemma_3_12B_it.safetensors           (Comfy-Org/ltx-2 split)
   Heretic LoRA:   models/loras/gemma-3-12b-it-abliterated_heretic_lora_rank64_bf16.safetensors
                   (abliterated CLIP LoRA — present on disk for workflows that wire it in;
                    NOT auto-loaded by this script because always_on_loras targets the
                    diffusion model only. See README §Abliteration for manual wiring.)
-  Distill LoRA:   models/loras/ltx-2.3-22b-distilled-lora-384.safetensors   (quality mode)
+  Distill LoRA:   models/loras/ltx-2.3-22b-distilled-lora-384.safetensors   (quality mode — distillation assist on the non-distilled base)
   Union LoRA:     models/loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors
   VBVR LoRA:      models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors
 """
@@ -73,20 +73,21 @@ OUTPUT_ROOT = os.environ.get("OUTPUT_DIR", os.path.join(COMFYUI_ROOT, "output"))
 # stay as-is. If porting to Linux, replace `\\` with `/`.
 _SEP = "\\"
 
-# Two render modes — picks checkpoint + audio-pipeline strategy per call:
+# Two render modes — both video-only; choose based on speed vs. fidelity:
 #
-#   "fast"    — ltx-2.3-22b-distilled-fp8.safetensors (27 GB, video-only).
-#               Skips the AV latent pipeline (no audio VAE, empty audio latent,
-#               concat/separate). ~2× faster than quality mode. Best for
-#               productions where dialogue/music/SFX come from the separate
-#               audio stack (Qwen3-TTS + ACE Step + MMAudio). DEFAULT.
+#   "fast"    — ltx-2.3-22b-distilled-fp8.safetensors (~22 GB).
+#               Distilled checkpoint, low CFG, ~24 steps. ~2× faster than quality
+#               mode. Best for narrative / character-driven content. DEFAULT.
 #
-#   "quality" — ltx2/ltx-2.3-eros.safetensors (35 GB, joint audio+video).
-#               Uses the full LTXVImgToVideoInplace + LTXVConcatAVLatent pipeline
-#               from the proven VBVR_EROS workflow. Slower but generates audio
-#               latents in-band. Useful for reference / debugging.
+#   "quality" — ltx-2.3-22b-dev-fp8.safetensors (~29 GB).
+#               Non-distilled FP8 base. Slower per step, higher prompt-fidelity
+#               and motion variety. Distill LoRA at 0.5 strength applied for
+#               partial step compression. Use when fast-mode output looks too
+#               "average" or when you need stronger prompt adherence.
 #
 # Either mode accepts the same per-scene LoRA routing.
+# joint_av is retained as a flag for forward-compat with future audio-capable
+# checkpoints; no currently-shipped model exercises that branch.
 MODES = {
     "fast": {
         # Default for narrative / character-driven content.
@@ -112,15 +113,13 @@ MODES = {
         ],
     },
     "quality": {
-        # EROS joint-AV pipeline — slow, mostly for debugging vs the fast path.
-        # Distill LoRA at 0.5 is intentional partial distillation of the EROS base.
-        # NOTE: ltx-2.3-eros.safetensors is NOT on the canonical Lightricks HF repo;
-        # it must be user-supplied (set HF_TOKEN against a private repo, drop the
-        # file in manually, or use --mode fast which works out of the box).
-        "checkpoint":   f"ltx2{_SEP}ltx-2.3-eros.safetensors",
+        # Non-distilled FP8 base — slower per step, higher prompt-fidelity vs fast mode.
+        # Distill LoRA at 0.5 partially compresses step count without fully baking
+        # in the distilled behaviour, giving more motion variety than pure fast mode.
+        "checkpoint":   "ltx-2.3-22b-dev-fp8.safetensors",
         "video_vae":    "LTX23_video_vae_bf16.safetensors",
         "text_encoder": "gemma_3_12B_it.safetensors",
-        "joint_av":     True,
+        "joint_av":     False,
         "always_on_loras": [
             # Distill LoRA lives at the root of loras/ in the canonical
             # comfyui-aeon-spark download layout (no ltx2/ subdirectory).
@@ -195,7 +194,6 @@ SCENE_LORAS = {
     "zoomout":                        (f"ltx2{_SEP}ltx23_zoomout_z00m047.safetensors",           0.9),
     "camera: dolly-left":             ("ltx-2-19b-lora-camera-control-dolly-left.safetensors",   0.8),
     "camera: jib-down":               (f"ltx2{_SEP}ltx-2-19b-lora-camera-control-jib-down.safetensors", 0.8),
-    "reasoning":                      (f"ltx2{_SEP}LTX2.3_Reasoning_V1.safetensors",             0.7),
     "transition":                     ("ltx2.3-transition.safetensors",                          1.0),
     "style: claymation":              (f"ltx2{_SEP}Claymation.safetensors",                      0.8),
     "style: ghibli":                  ("StudioGhibli.Redmond-StdGBRRedmAF-StudioGhibli.safetensors", 0.7),
@@ -328,10 +326,11 @@ def build_ltx_i2v_workflow(
     persistence=None,
     t2v=False,
     # --- A2V (audio-to-video) ---
-    # When audio_reference is set, LoadAudio + LTXVReferenceAudio are wired into
-    # the workflow. The audio literally conditions video generation — motion,
-    # pacing, and energy reflect the reference audio's content. Requires joint-AV
-    # mode (forces `quality` mode since only EROS was trained on A-V pairs).
+    # When audio_reference is set AND a joint_av MODES entry exists, LoadAudio +
+    # LTXVReferenceAudio are wired into the workflow so audio conditions video
+    # generation. No currently-shipped MODES entry sets joint_av=True; this
+    # parameter is preserved for forward-compat with future audio-capable
+    # checkpoints. Today, --audio-reference is a no-op with a warning.
     audio_reference=None,
     audio_guidance_scale=0.5,
     audio_start_percent=0.0,
@@ -339,16 +338,16 @@ def build_ltx_i2v_workflow(
 ):
     """Assemble the LTX 2.3 I2V workflow as a ComfyUI API-format dict.
 
-    Mirrors the stage-2-alone pattern from LTX-2 I2V - With VBVR_EROS.json's
-    "Samplers" subgraph. LTX 2.3 EROS is a joint audio-video model, so we
-    include an empty audio latent + LTXVConcatAVLatent / Separate pair around
-    the sampler; after decode we take just the video stream (audio gets muxed
-    later from Qwen3-TTS).
+    Mirrors the stage-2-alone pattern from a known-good community LTX 2.3
+    workflow. The joint-AV branches (LTXVAudioVAELoader, LTXVConcatAVLatent,
+    LTXVSeparateAVLatent) are dormant unless a future MODES entry sets
+    joint_av=True. Today the workflow is video-only; audio is muxed in at
+    stitch time from the separate audio stack (Qwen3-TTS / ACE-Step / MMAudio).
 
     Signal flow (node IDs as strings — ComfyUI API format):
        [10] CheckpointLoader  → MODEL0, CLIP0, VAE0 (ignored — we load all three fresh)
        [11] VAELoader(video)  → VAE
-       [12] LTXAVTextEncoderLoader(gemma-abliterated, eros) → CLIP
+       [12] LTXAVTextEncoderLoader(gemma_3_12B_it, ltx-2.3-22b-*-fp8) → CLIP
        [20..] LoraLoaderModelOnly chain on MODEL0 → MODEL
        [30] CLIPTextEncode(positive) → COND_POS
        [31] CLIPTextEncode(negative) → COND_NEG
@@ -373,11 +372,17 @@ def build_ltx_i2v_workflow(
     """
     if mode not in MODES:
         raise ValueError(f"Unknown mode '{mode}'. Choices: {list(MODES)}")
-    # A2V requires joint-AV: only EROS (quality mode) carries audio conditioning.
-    # Auto-force quality if the caller wanted A2V but a non-joint mode.
+    # A2V (audio-conditioned video) requires a joint-AV checkpoint. No currently
+    # shipped MODES entry sets joint_av=True — the EROS model that previously
+    # supplied this capability is not part of the canonical asset set. If a
+    # caller still passes --audio-reference, ignore it with a clear warning
+    # rather than silently producing broken workflows. The downstream joint_av
+    # branches remain in place so re-enabling is a single MODES edit away.
     if audio_reference is not None and not MODES[mode]["joint_av"]:
-        print(f"  [A2V auto-forcing mode=quality — current '{mode}' is not joint_av]")
-        mode = "quality"
+        print(f"  [warn] --audio-reference requires a joint-AV checkpoint; "
+              f"none configured in MODES. Ignoring audio reference and "
+              f"rendering video-only.", file=sys.stderr)
+        audio_reference = None
     mode_cfg = MODES[mode]
     models = {**{k: mode_cfg[k] for k in ("checkpoint", "video_vae", "text_encoder")},
               **(models or {})}
@@ -1158,10 +1163,11 @@ def main():
     pc.add_argument("--cfg", type=float, default=DEFAULT_CFG)
     pc.add_argument("--seed", type=int, default=None)
     pc.add_argument("--tags", nargs="*", default=[],
-        help="Scene tags to add LoRAs; e.g. --tags 'camera: dolly-left' 'reasoning'")
+        help="Scene tags to add LoRAs; e.g. --tags 'camera: dolly-left' 'transition'")
     pc.add_argument("--mode", default=DEFAULT_MODE, choices=list(MODES),
-        help=f"Render mode (default: {DEFAULT_MODE}). 'fast' = distilled-fp8 video-only, "
-             f"'quality' = eros joint AV, 'abstract' = no-physics for fractals/artwork.")
+        help=f"Render mode (default: {DEFAULT_MODE}). 'fast' = distilled-fp8 (faster), "
+             f"'quality' = non-distilled fp8 + distill LoRA (higher fidelity, ~30-50%% slower), "
+             f"'abstract' = no physics LoRAs for fractals/artwork.")
     pc.add_argument("--persistence", type=float, default=None,
         help="Image-persistence [0..1]: 0=full motion freedom, 1=hold input frame. "
              "Try 0.7 for steady character shots, 0.3 for dynamic action, unset for default (full motion).")
@@ -1171,9 +1177,10 @@ def main():
         help="Shortcut for a style tag: animation|claymation|ghibli|galaxy|tribal|illustration|cyberpunk. "
              "Appended to --tags as 'style: <name>'.")
     pc.add_argument("--audio-reference", default=None,
-        help="A2V: filename of an audio clip in input/ — literally conditions video generation "
-             "on the music. Auto-forces --mode quality (EROS joint-AV required). "
-             "Pair with prompts like 'procedural mathematical fractal psychedelic' for trippy results.")
+        help="A2V: filename of an audio clip in input/. Currently a no-op — no shipped model "
+             "supports joint audio-video conditioning. Reserved for future audio-capable "
+             "checkpoints. Audio for the final video should be added at stitch time via "
+             "the separate audio stack (Qwen3-TTS / ACE-Step / MMAudio).")
     pc.add_argument("--audio-guidance", type=float, default=0.5,
         help="A2V: strength of audio influence on video (0.0=ignore, 1.0=dominant). Default 0.5.")
     pc.add_argument("--audio-start-pct", type=float, default=0.0,
@@ -1312,8 +1319,9 @@ def main():
         audio_end_percent=args.audio_end_pct,
     )
 
-    # Reflect effective mode after auto-force (e.g. A2V forces quality)
-    effective_mode = "quality" if (args.audio_reference and not mode_cfg["joint_av"]) else args.mode
+    # No mode currently sets joint_av=True; --audio-reference is a no-op (warning
+    # is emitted from build_ltx_i2v_workflow). effective_mode == requested mode.
+    effective_mode = args.mode
     effective_cfg  = MODES[effective_mode]
     print("=== Movie Maker Fast — Single Clip ===")
     print(f"  Mode:       {effective_mode}  (joint_av={effective_cfg['joint_av']}, "

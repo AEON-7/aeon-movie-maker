@@ -301,8 +301,8 @@ Each shot gets three prompts:
 
 - Each shot submitted individually as an API-format workflow
 - Audio slice fed into LTX for audio-reactive generation (lip sync, motion)
-- **LoRA stack:** Distilled (0.5) + Reasoning (0.7) + IC-LoRA (0.8) + Abliterated (1.0)
-- **Models:** `ltx2310eros_beta` + `Gemma3-12B-NVFP4-Sikaworld-HF` (uncensored)
+- **LoRA stack:** Distilled (0.5) + IC-LoRA Union (0.7) + VBVR Physics (0.7); abliterated heretic LoRA available on disk for users who wire it into a custom workflow
+- **Models:** `ltx-2.3-22b-distilled-fp8.safetensors` (fast) or `ltx-2.3-22b-dev-fp8.safetensors` (quality) + `gemma_3_12B_it.safetensors` text encoder
 - Resume support: existing shots are skipped
 
 ### Phase 7: Post-Process (5-10 minutes)

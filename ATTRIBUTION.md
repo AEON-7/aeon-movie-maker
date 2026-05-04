@@ -4,12 +4,12 @@
 
 ## Models
 
-### LTX 2.3 22B (distilled fp8) + EROS
+### LTX 2.3 22B (distilled fp8 + non-distilled fp8)
 - **Authors:** Lightricks
-- **HuggingFace:** https://huggingface.co/Lightricks/LTX-Video
+- **HuggingFace:** https://huggingface.co/Lightricks/LTX-2.3 + https://huggingface.co/Lightricks/LTX-2.3-fp8
 - **Repository:** https://github.com/Lightricks/LTX-Video
-- The distilled fp8 variant (`ltxv-2b-0.9.7-distilled-fp8_e4m3fn`) provides ~3-5x wall-time per output second on a 5090.
-- The EROS variant supports joint AV (audio-driven generation via `LTXVReferenceAudio`).
+- Fast mode uses `ltx-2.3-22b-distilled-fp8.safetensors` (~22 GB) — distilled checkpoint, fewer steps, ~3-5× wall-time per output second on a 5090.
+- Quality mode uses `ltx-2.3-22b-dev-fp8.safetensors` (~29 GB) — non-distilled FP8 base for higher prompt-fidelity and motion variety, with the distill LoRA applied at 0.5 strength for partial step compression.
 
 ### VBVR physics LoRA
 - The Verifier-Based Video Refinement (VBVR) physics LoRA improves motion realism in the LTX fast pipeline. Sourced from the ltxv community on HuggingFace.

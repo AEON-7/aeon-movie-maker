@@ -96,8 +96,8 @@ Sidechain ducks music/SFX 12 dB under dialogue, then loudnorm I=-16:TP=-1.5:LRA=
 
 | Mode | When to use | Speed | Notes |
 |---|---|---|---|
-| `fast` | Default, realistic content with motion | ~3–5 s wall per s output | LTX 2.3 22B distilled fp8 + VBVR physics LoRA |
-| `quality` | Audio-driven (A2V), max fidelity, joint AV | ~10–15 s wall per s output | LTX 2.3 EROS — also forced when `--audio-reference` is set |
+| `fast` | Default, realistic content with motion | ~3–5 s wall per s output | LTX 2.3 22B distilled FP8 + VBVR physics LoRA |
+| `quality` | Stronger prompt adherence, more motion variety | ~5–8 s wall per s output | LTX 2.3 22B non-distilled FP8 + 0.5 distill LoRA + VBVR + IC-union |
 | `abstract` | Fractals, motion graphics, non-realistic | Same as fast | Drops VBVR physics LoRA — better for non-realistic content |
 
 ## Prompt engineering

@@ -50,7 +50,7 @@ LTX 2.3 is trained predominantly on real-world video. Each mode tunes the LoRA s
 | Mode | Content class | Stack | Sampler | CFG | Steps |
 |---|---|---|---|---|---|
 | **`fast`** (default) | Narrative / character / real-world scenes | Distilled + IC-union + VBVR physics | euler | 3.0 | 20 |
-| `quality` | Reference/debugging (joint AV via EROS) | EROS full + distill LoRA + IC-union + VBVR | euler | 3.0 | 20 |
+| `quality` | Higher prompt-fidelity / motion variety | Non-distilled FP8 + distill LoRA @ 0.5 + IC-union + VBVR | euler | 3.0 | 30 |
 | **`abstract`** | Fractals, geometry, artwork in motion, psychedelic, non-physical | NO always-on LoRAs (physics would hurt) | **euler_ancestral** | **5.0** | **30** |
 
 Why abstract drops the physics + reference LoRAs:
@@ -78,15 +78,14 @@ Why abstract drops the physics + reference LoRAs:
 
 | Slot | File | Role |
 |---|---|---|
-| Base | `ltx2/ltx-2.3-eros.safetensors` (35 GB) | Joint audio+video EROS — **user-supplied** (not on canonical Lightricks HF) |
+| Base | `ltx-2.3-22b-dev-fp8.safetensors` (~29 GB) | Non-distilled FP8 base — higher prompt-fidelity, more motion variety |
 | Video VAE | same | |
 | Text encoder | same | |
-| Audio VAE | `LTXVAudioVAELoader(ltx2/ltx-2.3-eros.safetensors)` | Joint AV path requires this |
-| LoRA | `ltx-2.3-22b-distilled-lora-384.safetensors` @ 0.5 | Partial distill boost (root of `loras/` — no `ltx2/` prefix) |
+| LoRA | `ltx-2.3-22b-distilled-lora-384.safetensors` @ 0.5 | Partial distill — compresses step count without baking in full distilled behaviour (root of `loras/` — no `ltx2/` prefix) |
 | LoRA | `ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors` @ 1.0 | |
 | LoRA | `ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors` @ 1.0 | |
 
-Quality mode includes empty audio latent + LTXVConcatAVLatent + LTXVSeparateAVLatent in the sampler chain. We still drop the audio output (muxed from the separate audio passes). Quality mode is ~30% slower and serves mostly as a debugging reference.
+Quality mode is ~30–50% slower than fast mode. Use it when fast-mode output looks too "average" or when you need stronger prompt adherence. No joint-AV path — audio comes exclusively from the separate audio stack (Qwen3-TTS / ACE-Step / MMAudio).
 
 ## 3. Per-scene LoRA routing
 
@@ -98,7 +97,6 @@ Tags on a scene (or dialogue direction) route to extra LoRAs on top of the alway
 | `zoomout` | `ltx2/ltx23_zoomout_z00m047.safetensors` @ 0.9 | Camera pulls back |
 | `camera: dolly-left` | `ltx-2-19b-lora-camera-control-dolly-left.safetensors` @ 0.8 | Dolly motion |
 | `camera: jib-down` | `ltx2/ltx-2-19b-lora-camera-control-jib-down.safetensors` @ 0.8 | Jib drop |
-| `reasoning` | `ltx2/LTX2.3_Reasoning_V1.safetensors` @ 0.7 | Better causality |
 | `transition` | `ltx2.3-transition.safetensors` @ 1.0 | Scene-boundary clips (auto-added) |
 | `style: claymation` | `ltx2/Claymation.safetensors` @ 0.8 | Stop-motion / clay |
 | `style: ghibli` | `StudioGhibli.Redmond...` @ 0.7 | Ghibli watercolor |
@@ -306,7 +304,7 @@ Measured on RTX 5090 (Blackwell), ComfyUI 0.19.3, LTX 2.3 22B distilled fp8, 832
 | Clip | Model status | Steps | Time | Real-time ratio |
 |---|---|---|---|---|
 | 3 s | cold (first load) | 20 | 81 s | 0.04× |
-| 5 s | warm (EROS loaded) | 24 | 90 s | 0.06× |
+| 5 s | warm (quality mode, dev-fp8) | 30 | ~110 s | 0.05× |
 | 5 s | fast-mode cold | 20 | 69 s | 0.07× |
 | 7 s | fast-mode warm | 20 | **~75 s** | **~0.09×** |
 
@@ -341,13 +339,13 @@ models/checkpoints/ltx-2.3-22b-distilled-fp8.safetensors
 
 Common mistake: users see "ltxv-distilled" on a HuggingFace page and download `ltxv-2b-0.9.7-distilled-fp8_e4m3fn.safetensors` (an older 2024 LTXV release, ~6 GB). That model loads fine in ComfyUI but **produces saturated, distorted output** because the script feeds it an LTX 2.3-shaped latent it can't decode correctly. The fix is to download the right file from `huggingface.co/Lightricks/LTX-Video` — should be ~22 GB.
 
-For quality mode + A2V, EROS lives at:
+For quality mode, the non-distilled FP8 base lives at:
 
 ```
-models/checkpoints/ltx2/ltx-2.3-eros.safetensors
+models/checkpoints/ltx-2.3-22b-dev-fp8.safetensors
 ```
 
-(The `ltx2/` subfolder is **not optional**.)
+(Root of `checkpoints/` — no subfolder. Downloaded by `comfyui-aeon-spark` from `Lightricks/LTX-2.3-fp8`.)
 
 ### Step 2 — Verify the text encoder
 
@@ -387,7 +385,7 @@ If you got distorted output and you've verified the right checkpoint is loaded, 
 | Mode | Default CFG | Default steps | When to adjust |
 |---|---|---|---|
 | `fast` | 3.0 | 20 | If output is too "loose" (drifts from prompt), raise CFG to 4.0. If saturated/burnt, lower to 2.5. |
-| `quality` | 3.0 | 30 | Same. EROS is sensitive — keep CFG ≤ 4.0. |
+| `quality` | 3.0 | 30 | Same as fast. Non-distilled base tolerates slightly higher CFG (up to 4.5) without burning. |
 | `abstract` | 5.0 | 30 | Higher CFG works here because abstract content benefits from prompt adherence. |
 
 CFG > 6 with any LTX 2.3 variant produces saturated, noisy, posterized output — that's the model's signature failure mode.
@@ -508,7 +506,7 @@ Listed explicitly so future agents don't re-invent:
 
 1. **IC-LoRA reference images per character** — `LTXICLoRALoaderModelOnly` + `LTXAddVideoICLoRAGuide` nodes exist and are proven in the KJ pose-switches workflow. Wiring them into `build_ltx_i2v_workflow()` on demand (when a character has `reference_image`) would make character appearance even more stable than seed offsets alone.
 2. **DWPose-driven motion** — `sdpose_wholebody_fp16` + `LTXAddVideoICLoRAGuide` can take pose sequences as motion input. Not wired.
-3. **Super-resolution pass** — the VBVR_EROS workflow ends with `RTXVideoSuperResolution` (1.5x ULTRA) + `RIFE VFI` frame interpolation. Adding an optional `--upscale` flag that runs these as a post-processing pass would bring output up to 1536×832 + smooth 60 fps.
+3. **Super-resolution pass** — community LTX 2.3 workflows commonly end with `RTXVideoSuperResolution` (1.5x ULTRA) + `RIFE VFI` frame interpolation. Adding an optional `--upscale` flag that runs these as a post-processing pass would bring output up to 1536×832 + smooth 60 fps.
 4. **Audio timeline placement** — stitcher currently treats dialogue/music/SFX as full-length masters. A timeline-aware version that places SFX at specific scene-timestamps via `adelay` would mirror `radio_drama.py`'s mix stage.
 5. **Automatic dialogue master assembly** — per-line TTS WAVs need to be concatenated + timed to match scene durations. Currently manual; could be auto-derived from the `clips_manifest.json` + the dialogue_map produced by `radio_drama.py stage_tts`.
 

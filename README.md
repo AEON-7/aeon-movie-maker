@@ -9,12 +9,12 @@ Part of the **AEON Media Production** family.
 ## What this gives you
 
 - **Three modes** — `clip` (single shot), `screenplay` (multi-shot film), `stitch` (audio mux with sidechain ducking)
-- **LTX 2.3 22B fp8** — Lightricks' fast/quality joint-AV pipeline. Three sub-modes: `fast` (distilled), `quality` (EROS, joint-AV), `abstract` (drops physics LoRAs for non-realistic content)
+- **LTX 2.3 22B fp8** — Lightricks' video pipeline. Three sub-modes: `fast` (distilled FP8), `quality` (non-distilled FP8 + 0.5 distill LoRA), `abstract` (drops physics LoRAs for non-realistic content)
 - **Last-frame carry-forward** — between sequential clips, the final frame of clip N becomes the seed image for clip N+1, preserving character appearance + lighting + composition
 - **Persistence knob** — `--persistence 0–1` controls how strictly the seed image constrains the next clip (0 = free, 1 = locked)
 - **Per-character seed offsets** — stable hash so the same character appears consistent across an entire screenplay
 - **Per-scene LoRA routing** — automatic style-tag → LoRA selection (cinematic, anime, pixar, etc.)
-- **T2V / I2V / A2V** — text-to-video, image-to-video, or **audio-to-video** (LTX 2.3 EROS with `LTXVReferenceAudio` — true joint AV)
+- **T2V / I2V** — text-to-video or image-to-video. Audio comes from the separate audio stack (Qwen3-TTS / ACE-Step / MMAudio) and is muxed in at stitch time.
 - **Sidechain-ducked mix** at stitch time — music drops ~12 dB under speech, then `loudnorm I=-16:TP=-1.5:LRA=11`
 
 ## Quick start
@@ -59,8 +59,8 @@ python scripts/movie_maker_fast.py clip \
 ```
 
 Modes:
-- `fast` — LTX 2.3 22B distilled fp8, ~3–5 s of wall time per second of output
-- `quality` — LTX 2.3 EROS joint-AV, slower but supports `--audio-reference` for true A2V
+- `fast` — LTX 2.3 22B distilled FP8, ~3–5 s of wall time per second of output
+- `quality` — LTX 2.3 22B non-distilled FP8 + distill LoRA @ 0.5, ~30–50% slower than fast but stronger prompt adherence and more motion variety
 - `abstract` — drops physics LoRAs (VBVR), better for fractals / motion graphics / non-realistic content
 
 ### `screenplay` — multi-shot film
@@ -139,7 +139,7 @@ For non-narrative work (music videos), substitute `aeon-music-maker` for the aud
 
 - ComfyUI reachable at `${COMFYUI_URL}`
 - Python 3.10+, ffmpeg + ffprobe
-- ~50 GB disk for LTX 2.3 22B + EROS + LoRAs + Gemma encoder
+- ~80 GB disk for LTX 2.3 22B (fast + quality FP8 checkpoints) + always-on LoRAs + Gemma encoder
 
 `setup.sh` checks all of this and lists download commands for any missing pieces. See `references/AGENT_CINEMA_AUTOPILOT.md` for the full agent runbook.
 
@@ -221,7 +221,7 @@ The script:
 1. **Detects local uncommitted changes** and offers to stash + re-apply them
 2. **Shows a diff preview** of incoming commits + files-changed list
 3. **Asks for confirmation** before pulling
-4. **Refreshes Python deps** + re-runs `setup.sh` model check (so any new LTX 2.3 / EROS / LoRA additions are flagged)
+4. **Refreshes Python deps** + re-runs `setup.sh` model check (so any new LTX 2.3 / LoRA additions are flagged)
 
 ### Flags
 

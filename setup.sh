@@ -50,7 +50,7 @@ cat <<'EOF'
 
       LTX 2.3 22B base models (canonical sources: Comfy-Org/ltx-2 + Lightricks/LTX-2.3 + Lightricks/LTX-2.3-fp8):
         models/checkpoints/ltx-2.3-22b-distilled-fp8.safetensors                 (~22 GB, REQUIRED for 'fast' + 'abstract' modes)
-        models/checkpoints/ltx2/ltx-2.3-eros.safetensors                         (~30 GB, USER-SUPPLIED — not on public Lightricks HF; only needed for 'quality' mode + --audio-reference A2V)
+        models/checkpoints/ltx-2.3-22b-dev-fp8.safetensors                       (~29 GB, REQUIRED for 'quality' mode — non-distilled FP8)
 
       Video VAE:
         models/vae/LTX23_video_vae_bf16.safetensors                              (REQUIRED — Kijai/LTX2.3_comfy)
@@ -68,20 +68,16 @@ cat <<'EOF'
       Always-on LoRAs (auto-loaded by movie_maker_fast.py — diffusion-model side):
         models/loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors        (REQUIRED — composition control, applied to both fast + quality modes)
         models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors            (REQUIRED — VBVR physics, applied to fast + quality modes)
-        models/loras/ltx-2.3-22b-distilled-lora-384.safetensors                  (REQUIRED for quality mode only — distill assist on EROS;
-                                                                                  note: NO ltx2/ prefix — file lives at the root of loras/)
+        models/loras/ltx-2.3-22b-distilled-lora-384.safetensors                  (REQUIRED for quality mode — distill assist on the non-distilled
+                                                                                  dev-fp8 base; note: NO ltx2/ prefix — file lives at the root of loras/)
 
       Optional camera/style/control LoRAs (loaded only when screenplay tags request them):
         models/loras/ltx-2-19b-lora-camera-control-dolly-left.safetensors        ('camera: dolly-left')
         models/loras/ltx2/ltx-2-19b-lora-camera-control-jib-down.safetensors     ('camera: jib-down')
         models/loras/ltx2/ltx23_zoomout_z00m047.safetensors                      ('zoomout' / inferred from prompt)
         models/loras/ltx2/ltx23__demopose_d3m0p0s3.safetensors                   ('pose: demo')
-        models/loras/ltx2/LTX2.3_Reasoning_V1.safetensors                        ('reasoning')
         models/loras/ltx2.3-transition.safetensors                               ('transition' — auto-added at scene boundaries)
         models/loras/ltx-2.3-id-lora-talkvid-3k.safetensors                      ('character: talkinghead')
-
-      Audio VAE (only needed if you ever pass --audio-reference for A2V quality mode):
-        models/vae/ltx-2-audio-vae.safetensors                                   (~250 MB)
 
       Style LoRAs (CIVITAI-HOSTED — needs CIVITAI_TOKEN, not HF_TOKEN):
         models/loras/CyberPunkAI.safetensors                                     (cyberpunk style preset)
@@ -121,10 +117,9 @@ else
         "loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors"
     )
     OPTIONAL=(
-        # 'quality' mode + A2V — only if user runs `--mode quality` or passes audio
-        "checkpoints/ltx2/ltx-2.3-eros.safetensors"
+        # 'quality' mode — non-distilled FP8 base + matching distill LoRA
+        "checkpoints/ltx-2.3-22b-dev-fp8.safetensors"
         "loras/ltx-2.3-22b-distilled-lora-384.safetensors"
-        "vae/ltx-2-audio-vae.safetensors"
     )
     missing=()
     for m in "${REQUIRED[@]}"; do
@@ -148,9 +143,9 @@ else
         [[ -f "$COMFYUI_ROOT/models/$m" ]] || opt_missing+=("$m")
     done
     if [[ ${#opt_missing[@]} -gt 0 ]]; then
-        c_yel "      Optional (quality mode / A2V) — ${#opt_missing[@]} not present:"
+        c_yel "      Optional (quality mode) — ${#opt_missing[@]} not present:"
         for m in "${opt_missing[@]}"; do echo "        - $m"; done
-        c_yel "      Skip these unless you'll run '--mode quality' or pass --audio-reference."
+        c_yel "      Skip these unless you'll run '--mode quality'."
     fi
 fi
 
