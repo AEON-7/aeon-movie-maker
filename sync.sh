@@ -153,20 +153,34 @@ else
 fi
 
 # ── 3. Refresh Python deps ──────────────────────────────────────────────
+# Use `python3` (universally present) instead of `python` (not on PATH on
+# Ubuntu 24.04+ / Debian 12+ unless `python-is-python3` is installed).
+# Pass --break-system-packages on PEP-668-protected systems (Ubuntu 24.04+),
+# falling back to a plain install on older Pythons that don't recognise the
+# flag. The only dep we actually install is `requests`, which is almost
+# always already present — pip exits cleanly either way.
 c_blu "[2/3] Refreshing Python dependencies..."
 if [[ -f requirements.txt ]]; then
-    python -m pip install --quiet -r requirements.txt
+    PIP_FLAGS="--quiet"
+    if python3 -m pip install --help 2>&1 | grep -q break-system-packages; then
+        PIP_FLAGS="$PIP_FLAGS --break-system-packages"
+    fi
+    python3 -m pip install $PIP_FLAGS -r requirements.txt
     c_grn "      ✓ deps up to date."
 else
     c_yel "      no requirements.txt found, skipping."
 fi
 
 # ── 4. Model delta-check ────────────────────────────────────────────────
+# Test for setup.sh's PRESENCE (-f) not its executable bit (-x). `gh repo
+# clone` and shallow git clones don't always preserve +x, leading to a
+# silent skip of the model check (the most useful step). We invoke via
+# `bash` so the +x bit doesn't matter at execution time either.
 if [[ $NO_MODELS -eq 1 ]]; then
     c_yel "[3/3] --no-models: skipping model check"
-elif [[ -x ./setup.sh ]]; then
+elif [[ -f ./setup.sh ]]; then
     c_blu "[3/3] Model delta-check (re-running setup.sh model section)..."
-    ./setup.sh 2>&1 | tail -n 40 || true
+    bash ./setup.sh 2>&1 | tail -n 40 || true
 else
     c_yel "[3/3] no setup.sh, skipping model check"
 fi

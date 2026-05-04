@@ -22,8 +22,16 @@ else
 fi
 
 c_blu "[2/4] Python dependencies"
-python -m pip install --quiet --upgrade pip
-python -m pip install --quiet -r requirements.txt
+# Use `python3` (always present) and pass --break-system-packages on
+# PEP-668-protected systems (Ubuntu 24.04+, Debian 12+) where bare
+# `pip install` is blocked. Falls back to a plain install on older
+# distros that don't recognise the flag.
+PIP_FLAGS="--quiet"
+if python3 -m pip install --help 2>&1 | grep -q break-system-packages; then
+    PIP_FLAGS="$PIP_FLAGS --break-system-packages"
+fi
+python3 -m pip install $PIP_FLAGS --upgrade pip
+python3 -m pip install $PIP_FLAGS -r requirements.txt
 c_grn "      ✓ deps installed"
 
 c_blu "[3/4] ffmpeg + ffprobe"

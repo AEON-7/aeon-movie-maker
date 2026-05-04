@@ -42,7 +42,7 @@ Models (canonical comfyui-aeon-spark asset layout — see download_models.py for
   VBVR LoRA:      models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors
 """
 import argparse, json, os, random, shutil, subprocess, sys, time
-import urllib.request, urllib.error
+import urllib.request, urllib.error, urllib.parse
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -67,11 +67,15 @@ OUTPUT_ROOT = os.environ.get("OUTPUT_DIR", os.path.join(COMFYUI_ROOT, "output"))
 # Model stack — canonical defaults, mirrored from VBVR_EROS workflow
 # ============================================================================
 
-# ComfyUI on Windows expects backslash path separators inside the filename field
-# for nested model subdirectories (forward-slash paths fail validation with
-# `value_not_in_list`). All nested paths here use `\` for Windows — plain basenames
-# stay as-is. If porting to Linux, replace `\\` with `/`.
-_SEP = "\\"
+# Path separator inside ComfyUI's `filename` field for nested model subdirectories.
+# ComfyUI normalises both `/` and `\` internally, but the model lookup compares the
+# request value against a list of registered model paths that use the host OS's
+# native separator. So Linux/macOS hosts need `/` and Windows hosts need `\`.
+# Auto-detect from os.sep so `fast` and `quality` modes work cross-platform without
+# editing this constant. (Previous hard-coded `\\` broke every non-Windows host with
+# `value_not_in_list` errors on the `ltx2/Ltx2.3-...` LoRA — bug fix 2026-05-03.)
+import os as _os
+_SEP = _os.sep
 
 # Two render modes — both video-only; choose based on speed vs. fidelity:
 #
@@ -232,6 +236,23 @@ def comfy_request(path, data=None, timeout=30):
         req = urllib.request.Request(url)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
+
+
+def comfy_fetch_view(filename, subfolder="", file_type="output", timeout=120):
+    """Download a ComfyUI output via its /view endpoint and return the bytes.
+
+    Used as a fallback when the script can't locate the file on a shared
+    filesystem (e.g. running in a container without COMFYUI_ROOT pointed at
+    the right place, or running over pure HTTP from a separate host with no
+    NFS / bind mount to ComfyUI's output dir). Works with any deployment
+    topology since it's just an HTTP GET against the ComfyUI API.
+    """
+    qs = urllib.parse.urlencode({
+        "filename": filename, "subfolder": subfolder, "type": file_type,
+    })
+    url = f"{COMFYUI_URL}/view?{qs}"
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return r.read()
 
 
 SUBMIT_RETRY_DELAYS_S = (2, 5, 10)
@@ -731,9 +752,29 @@ def render_clip(image_path, prompt, duration_s, *,
                 fn = a["filename"]
                 if not fn.lower().endswith((".mp4", ".webm")):
                     continue
-                p_cand = os.path.join(OUTPUT_ROOT, a.get("subfolder", ""), fn)
+                sub = a.get("subfolder", "")
+                ftype = a.get("type", "output")
+                p_cand = os.path.join(OUTPUT_ROOT, sub, fn)
                 if os.path.exists(p_cand):
                     return p_cand, elapsed, seed
+                # Filesystem lookup failed (likely OUTPUT_ROOT doesn't
+                # match ComfyUI's actual output dir — common when running
+                # from inside a container without COMFYUI_ROOT set, or via
+                # SSH where ComfyUI's filesystem isn't mounted). Fall back
+                # to ComfyUI's /view HTTP endpoint and stage the file
+                # locally so the rest of the pipeline (last-frame extract,
+                # ffprobe, etc.) sees a real path.
+                try:
+                    blob = comfy_fetch_view(fn, sub, ftype)
+                    cache_dir = os.path.join(OUTPUT_ROOT, "_view_cache", sub)
+                    os.makedirs(cache_dir, exist_ok=True)
+                    p_cand = os.path.join(cache_dir, fn)
+                    with open(p_cand, "wb") as f:
+                        f.write(blob)
+                    return p_cand, elapsed, seed
+                except Exception as exc:
+                    print(f"WARN: /view fallback failed for {sub}/{fn}: {exc}")
+                    continue
     raise RuntimeError("No output file found in history")
 
 
@@ -1365,7 +1406,12 @@ def main():
     # Find the rendered mp4. ComfyUI's SaveVideo node emits the file under the
     # `images` key of the node output (historical quirk — the `videos` key is used
     # only by older VHS nodes). Check both keys + any animation entries.
+    # If the file isn't reachable via the local filesystem (script running inside
+    # a container without COMFYUI_ROOT pointed at the right path, or pure-HTTP
+    # remote mode without a shared mount), download via ComfyUI's /view endpoint
+    # straight into out_path.
     src = None
+    fetched_via_view = False
     for v in result.get("outputs", {}).values():
         for key in ("videos", "gifs", "images"):
             for a in v.get(key, []):
@@ -1374,9 +1420,21 @@ def main():
                 fn = a["filename"]
                 if not fn.lower().endswith((".mp4", ".webm", ".gif")):
                     continue
-                p_cand = os.path.join(OUTPUT_ROOT, a.get("subfolder", ""), fn)
+                sub = a.get("subfolder", "")
+                ftype = a.get("type", "output")
+                p_cand = os.path.join(OUTPUT_ROOT, sub, fn)
                 if os.path.exists(p_cand):
                     src = p_cand; break
+                # /view fallback: stream the bytes directly into out_path
+                try:
+                    blob = comfy_fetch_view(fn, sub, ftype)
+                    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+                    with open(out_path, "wb") as f:
+                        f.write(blob)
+                    src = out_path; fetched_via_view = True; break
+                except Exception as exc:
+                    print(f"WARN: /view fallback failed for {sub}/{fn}: {exc}")
+                    continue
             if src: break
         if src: break
     if not src:
@@ -1384,8 +1442,8 @@ def main():
         print(f"outputs: {json.dumps(result.get('outputs',{}), indent=2)[:500]}")
         sys.exit(1)
 
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    if os.path.abspath(src) != out_path:
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    if not fetched_via_view and os.path.abspath(src) != out_path:
         shutil.copy2(src, out_path)
     size_mb = os.path.getsize(out_path) / 1024 / 1024
 
