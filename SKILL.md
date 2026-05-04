@@ -67,7 +67,8 @@ Why abstract drops the physics + reference LoRAs:
 |---|---|---|
 | Base | `ltx-2.3-22b-distilled-fp8.safetensors` (27 GB) | Video-only distilled 22B, fp8 |
 | Video VAE | `LTX23_video_vae_bf16.safetensors` | |
-| Text encoder | `gemma-3-12b-abliterated-text-encoder.safetensors` | Uncensored prompt understanding |
+| Text encoder | `gemma_3_12B_it.safetensors` | Base Gemma-3 12B IT (Comfy-Org/ltx-2 split) |
+| Abliteration LoRA | `gemma-3-12b-it-abliterated_heretic_lora_rank64_bf16.safetensors` | Available on disk; not auto-applied (needs CLIP-side wiring — manual workflow only) |
 | LoRA (always) | `ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors` @ 1.0 | Reference-based char/scene control |
 | LoRA (always) | `ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors` @ 1.0 | Physics / object permanence |
 
@@ -77,11 +78,11 @@ Why abstract drops the physics + reference LoRAs:
 
 | Slot | File | Role |
 |---|---|---|
-| Base | `ltx2/ltx-2.3-eros.safetensors` (35 GB) | Abliterated joint audio+video EROS |
+| Base | `ltx2/ltx-2.3-eros.safetensors` (35 GB) | Joint audio+video EROS — **user-supplied** (not on canonical Lightricks HF) |
 | Video VAE | same | |
 | Text encoder | same | |
 | Audio VAE | `LTXVAudioVAELoader(ltx2/ltx-2.3-eros.safetensors)` | Joint AV path requires this |
-| LoRA | `ltx2/ltx-2.3-22b-distilled-lora-384.safetensors` @ 0.5 | Partial distill boost |
+| LoRA | `ltx-2.3-22b-distilled-lora-384.safetensors` @ 0.5 | Partial distill boost (root of `loras/` — no `ltx2/` prefix) |
 | LoRA | `ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors` @ 1.0 | |
 | LoRA | `ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors` @ 1.0 | |
 
@@ -353,10 +354,12 @@ models/checkpoints/ltx2/ltx-2.3-eros.safetensors
 The script loads:
 
 ```
-models/text_encoders/gemma-3-12b-abliterated-text-encoder.safetensors
+models/text_encoders/gemma_3_12B_it.safetensors
 ```
 
-If you only have the `.gguf` quantization (`google_gemma-3-12b-it-abliterated-v2-Q6_K.gguf`), the LTX text-encoder loader will fail or use a fallback path that produces incoherent embeddings → garbage video. Get the `.safetensors` variant from the same Lightricks repo.
+This is the canonical Comfy-Org/ltx-2 split-files Gemma-3 12B IT encoder (downloaded by `comfyui-aeon-spark`). If you only have the `.gguf` quantization (`google_gemma-3-12b-it-abliterated-v2-Q6_K.gguf`), the LTX text-encoder loader will fail or use a fallback path that produces incoherent embeddings → garbage video. Get the `.safetensors` variant.
+
+**Abliteration note**: this is the BASE encoder. Uncensored prompting requires applying `loras/gemma-3-12b-it-abliterated_heretic_lora_rank64_bf16.safetensors` on top. `comfyui-aeon-spark` downloads that LoRA, but `movie_maker_fast.py` does not auto-apply it (its always_on_loras only routes to the diffusion model). Wire it via a custom workflow's CLIP-side LoRA loader if you need uncensored output.
 
 ### Step 3 — Tune LoRA strengths
 

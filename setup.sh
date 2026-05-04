@@ -44,20 +44,32 @@ cat <<'EOF'
       ║ NOT optional — keep the directory structure as written)          ║
       ╚══════════════════════════════════════════════════════════════════╝
 
-      LTX 2.3 22B base models (download from https://huggingface.co/Lightricks/LTX-Video):
+      RECOMMENDED installer: use comfyui-aeon-spark which downloads all canonical files
+      automatically (https://github.com/AEON-7/comfyui-aeon-spark — see its download_models.py).
+      The paths below are what comfyui-aeon-spark produces; manual installs must match exactly.
+
+      LTX 2.3 22B base models (canonical sources: Comfy-Org/ltx-2 + Lightricks/LTX-2.3 + Lightricks/LTX-2.3-fp8):
         models/checkpoints/ltx-2.3-22b-distilled-fp8.safetensors                 (~22 GB, REQUIRED for 'fast' + 'abstract' modes)
-        models/checkpoints/ltx2/ltx-2.3-eros.safetensors                         (~30 GB, REQUIRED for 'quality' mode + --audio-reference A2V)
+        models/checkpoints/ltx2/ltx-2.3-eros.safetensors                         (~30 GB, USER-SUPPLIED — not on public Lightricks HF; only needed for 'quality' mode + --audio-reference A2V)
 
       Video VAE:
-        models/vae/LTX23_video_vae_bf16.safetensors                              (REQUIRED, ships in the LTX-Video HF release)
+        models/vae/LTX23_video_vae_bf16.safetensors                              (REQUIRED — Kijai/LTX2.3_comfy)
 
-      Text encoder (abliterated Gemma — safetensors, NOT the GGUF variant):
-        models/text_encoders/gemma-3-12b-abliterated-text-encoder.safetensors    (~25 GB, REQUIRED)
+      Text encoder (Comfy-Org split-files layout):
+        models/text_encoders/gemma_3_12B_it.safetensors                          (~24 GB, REQUIRED — base Gemma-3 12B IT)
 
-      Always-on LoRAs (downloaded from Lightricks/LTX-Video on HuggingFace):
+      Abliteration LoRA (apply on top of Gemma encoder for uncensored prompting):
+        models/loras/gemma-3-12b-it-abliterated_heretic_lora_rank64_bf16.safetensors
+                                                                                 (REQUIRED if you need uncensored output. NOT auto-loaded by
+                                                                                  movie_maker_fast.py because always_on_loras only routes to the
+                                                                                  diffusion model — wire it into a custom workflow's CLIP loader
+                                                                                  if you want abliteration applied automatically.)
+
+      Always-on LoRAs (auto-loaded by movie_maker_fast.py — diffusion-model side):
         models/loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors        (REQUIRED — composition control, applied to both fast + quality modes)
         models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors            (REQUIRED — VBVR physics, applied to fast + quality modes)
-        models/loras/ltx2/ltx-2.3-22b-distilled-lora-384.safetensors             (REQUIRED for quality mode only — distill assist on EROS)
+        models/loras/ltx-2.3-22b-distilled-lora-384.safetensors                  (REQUIRED for quality mode only — distill assist on EROS;
+                                                                                  note: NO ltx2/ prefix — file lives at the root of loras/)
 
       Optional camera/style/control LoRAs (loaded only when screenplay tags request them):
         models/loras/ltx-2-19b-lora-camera-control-dolly-left.safetensors        ('camera: dolly-left')
@@ -103,14 +115,15 @@ else
     REQUIRED=(
         "checkpoints/ltx-2.3-22b-distilled-fp8.safetensors"
         "vae/LTX23_video_vae_bf16.safetensors"
-        "text_encoders/gemma-3-12b-abliterated-text-encoder.safetensors"
+        "text_encoders/gemma_3_12B_it.safetensors"
+        "loras/gemma-3-12b-it-abliterated_heretic_lora_rank64_bf16.safetensors"
         "loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors"
         "loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors"
     )
     OPTIONAL=(
         # 'quality' mode + A2V — only if user runs `--mode quality` or passes audio
         "checkpoints/ltx2/ltx-2.3-eros.safetensors"
-        "loras/ltx2/ltx-2.3-22b-distilled-lora-384.safetensors"
+        "loras/ltx-2.3-22b-distilled-lora-384.safetensors"
         "vae/ltx-2-audio-vae.safetensors"
     )
     missing=()
@@ -122,10 +135,12 @@ else
     else
         c_yel "      ${#missing[@]} required model(s) missing:"
         for m in "${missing[@]}"; do echo "        - $m"; done
-        c_yel "      Download with huggingface-cli (recommended):"
-        c_yel "        huggingface-cli download Lightricks/LTX-Video --include '*.safetensors' \\"
-        c_yel "          --local-dir \$COMFYUI_ROOT/models/staging-ltx"
-        c_yel "      Then move/symlink files into the canonical paths above. Or use the ComfyUI Manager UI."
+        c_yel "      Recommended: install via comfyui-aeon-spark (handles all 28+ files with"
+        c_yel "      resumable HF downloads, retries, and gated-repo token handling):"
+        c_yel "        git clone https://github.com/AEON-7/comfyui-aeon-spark"
+        c_yel "        cd comfyui-aeon-spark && python download_models.py --workspace \$COMFYUI_ROOT/.."
+        c_yel "      Or manually: download from the canonical HF repos listed above and place"
+        c_yel "      at the exact paths shown in the model checklist."
     fi
     # Optional models — quality mode + A2V
     opt_missing=()

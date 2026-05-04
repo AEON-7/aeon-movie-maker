@@ -29,12 +29,17 @@ Pipeline:
 
 Models (all on disk, all verified working via LTX-2 I2V - With VBVR_EROS.json):
 
-  Base:        models/checkpoints/ltx2/ltx-2.3-eros.safetensors
-  Video VAE:   models/vae/LTX23_video_vae_bf16.safetensors
-  Text enc:    models/text_encoders/gemma-3-12b-abliterated-text-encoder.safetensors
-  Distill LoRA:models/loras/ltx2/ltx-2.3-22b-distilled-lora-384.safetensors
-  Union LoRA:  models/loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors
-  VBVR LoRA:   models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors
+  Base (fast):    models/checkpoints/ltx-2.3-22b-distilled-fp8.safetensors  (default)
+  Base (quality): models/checkpoints/ltx2/ltx-2.3-eros.safetensors          (user-supplied — not on canonical HF)
+  Video VAE:      models/vae/LTX23_video_vae_bf16.safetensors
+  Text enc:       models/text_encoders/gemma_3_12B_it.safetensors           (Comfy-Org/ltx-2 split)
+  Heretic LoRA:   models/loras/gemma-3-12b-it-abliterated_heretic_lora_rank64_bf16.safetensors
+                  (abliterated CLIP LoRA — present on disk for workflows that wire it in;
+                   NOT auto-loaded by this script because always_on_loras targets the
+                   diffusion model only. See README §Abliteration for manual wiring.)
+  Distill LoRA:   models/loras/ltx-2.3-22b-distilled-lora-384.safetensors   (quality mode)
+  Union LoRA:     models/loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors
+  VBVR LoRA:      models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors
 """
 import argparse, json, os, random, shutil, subprocess, sys, time
 import urllib.request, urllib.error
@@ -92,7 +97,14 @@ MODES = {
         # CLI overrides: --vbvr-strength, --ic-lora-strength, --distill-strength.
         "checkpoint":   "ltx-2.3-22b-distilled-fp8.safetensors",
         "video_vae":    "LTX23_video_vae_bf16.safetensors",
-        "text_encoder": "gemma-3-12b-abliterated-text-encoder.safetensors",
+        # Canonical Comfy-Org/ltx-2 split-files layout (matches comfyui-aeon-spark
+        # download_models.py). Note: this is the BASE Gemma encoder. Abliteration
+        # (uncensored output) requires applying gemma-3-12b-it-abliterated_heretic_lora_rank64_bf16.safetensors
+        # ON TOP of this encoder — that LoRA is downloaded by comfyui-aeon-spark
+        # but is NOT auto-loaded here because always_on_loras targets the diffusion
+        # model only (LoraLoaderModelOnly). Wire it in via a custom workflow if you
+        # need uncensored prompting; the file is at models/loras/ for that purpose.
+        "text_encoder": "gemma_3_12B_it.safetensors",
         "joint_av":     False,
         "always_on_loras": [
             ("ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors", 0.7),
@@ -102,12 +114,17 @@ MODES = {
     "quality": {
         # EROS joint-AV pipeline — slow, mostly for debugging vs the fast path.
         # Distill LoRA at 0.5 is intentional partial distillation of the EROS base.
+        # NOTE: ltx-2.3-eros.safetensors is NOT on the canonical Lightricks HF repo;
+        # it must be user-supplied (set HF_TOKEN against a private repo, drop the
+        # file in manually, or use --mode fast which works out of the box).
         "checkpoint":   f"ltx2{_SEP}ltx-2.3-eros.safetensors",
         "video_vae":    "LTX23_video_vae_bf16.safetensors",
-        "text_encoder": "gemma-3-12b-abliterated-text-encoder.safetensors",
+        "text_encoder": "gemma_3_12B_it.safetensors",
         "joint_av":     True,
         "always_on_loras": [
-            (f"ltx2{_SEP}ltx-2.3-22b-distilled-lora-384.safetensors", 0.5),
+            # Distill LoRA lives at the root of loras/ in the canonical
+            # comfyui-aeon-spark download layout (no ltx2/ subdirectory).
+            ("ltx-2.3-22b-distilled-lora-384.safetensors", 0.5),
             ("ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors", 0.7),
             (f"ltx2{_SEP}Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors", 0.7),
         ],
@@ -120,7 +137,7 @@ MODES = {
         # for tighter prompt adherence on unfamiliar content.
         "checkpoint":   "ltx-2.3-22b-distilled-fp8.safetensors",
         "video_vae":    "LTX23_video_vae_bf16.safetensors",
-        "text_encoder": "gemma-3-12b-abliterated-text-encoder.safetensors",
+        "text_encoder": "gemma_3_12B_it.safetensors",
         "joint_av":     False,
         "always_on_loras": [],  # pure: no physics, no reference control
         "default_cfg":    5.0,
