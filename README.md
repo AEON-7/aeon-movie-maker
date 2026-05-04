@@ -189,6 +189,116 @@ python scripts/movie_maker_fast.py stitch clips_manifest.json \
     -o finished_film.mp4
 ```
 
+## Production workflow: dialogue + custom music
+
+The Prompt Relay flow (`screenplay --use-relay`) generates **joint A/V** —
+LTX 2.3 produces both the video and an audio track in a single forward pass.
+With dialogue lines in your screenplay scenes, the model generates speech
+with lipsync. But the model also tends to add a music bed of its own, which
+fights with any score you'd want to compose intentionally. This section
+documents the validated pattern for getting **clean dialogue from the
+relay + a custom-composed score from `aeon-music-maker`** muxed cleanly.
+
+### 1. Suppress music in the relay output
+
+In your screenplay JSON, set the top-level `negative_prompt` field to
+include music vocabulary alongside the standard anatomy negatives. The
+`render_screenplay_relay` flow honors this automatically (and you can
+override per-run with `--relay-negative-prompt`):
+
+```json
+{
+  "title": "...",
+  "characters": { "...": "..." },
+  "scenes": [...],
+
+  "negative_prompt": "music, background music, soundtrack, score, instruments, drums, drum beat, oud, lute, sitar, flute, percussion, melody, melodic, instrumental, ambient music, song, singing, chanting, deformed, mutilated, extra limbs, extra fingers, malformed face, blurry, low quality, watermark, text, subtitles, cartoon"
+}
+```
+
+Behind the scenes this swaps the relay's default `ConditioningZeroOut`
+(zero-vector negative — no anatomy / quality guardrails) for a real
+CLIP-encoded negative. At canonical CFG 1 the negative still steers
+sufficiently to suppress the music; at CFG ≥ 3 the negative is essential
+for clean output.
+
+The relay pass now produces **dialogue + ambient room tone + (suppressed)
+music**. Render and concatenate the sequences as usual:
+
+```bash
+python scripts/movie_maker_fast.py screenplay my_film.json \
+    --use-relay \
+    --output-dir output/movie_fast/my_film
+
+cd output/movie_fast/my_film
+ls sequence_*.mp4 | sed -E "s/^/file '/;s/$/'/" > concat.txt
+ffmpeg -f concat -safe 0 -i concat.txt -c copy MY_FILM.mp4
+```
+
+### 2. Compose the score in `aeon-music-maker`
+
+The sister [`aeon-music-maker`](https://github.com/AEON-7/aeon-music-maker)
+tool wraps the same ACE-Step XL Turbo workflow that ships with
+`comfyui-aeon-spark`. Use **section tags** keyed to your film's emotional
+beats so the score breathes WITH the dialogue rather than running flat
+underneath it:
+
+```bash
+python scripts/music_maker.py \
+    --prompt "Middle Eastern cinematic score, Sufi-inspired mystical atmospheric. ney flute, oud, qanun, warm cello sustains, no drums, no percussion, organic acoustic, breathing room between phrases, loud-quiet-loud dynamics. [intro: solo ney flute in D minor, sparse single notes, mysterious, breathing room, 8 seconds] [verse: oud joins softly plucked, warm hopeful, 8 seconds] [bridge: qanun shimmer, gentle cello sustains, intimate, restrained, 9 seconds] [build: strings rise gradually, ney returns over swelling cello and oud, 9 seconds] [climax: full ensemble briefly opens, brief restrained peak, 9 seconds] [outro: resolve to ney and oud duet, fade to single sustained note, 9 seconds]" \
+    --duration 52 \
+    --bpm 60 \
+    --key "D minor" \
+    --variant xl_turbo \
+    --master orchestral \
+    --output output/music/my_film_score.flac
+```
+
+Match `--duration` to your film's actual length (run `ffprobe -v error -show_entries format=duration -of csv=p=0 MY_FILM.mp4`). The
+`--master orchestral` preset hits −18 LUFS with no compression, preserving
+the dynamics so quiet beats stay quiet under dialogue.
+
+### 3. Mux dialogue + score together
+
+Two recipes — pick one:
+
+```bash
+# Dialogue-on-top, score underneath at 28% volume (recommended starting point)
+ffmpeg -i MY_FILM.mp4 -i my_film_score.flac \
+  -filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.28[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[a]" \
+  -map 0:v -map "[a]" \
+  -c:v copy -c:a aac -b:a 192k \
+  MY_FILM_with_score.mp4
+
+# Replace dialogue audio entirely (score becomes the only audio — for purely visual cuts)
+ffmpeg -i MY_FILM.mp4 -i my_film_score.flac \
+  -map 0:v -map 1:a -shortest \
+  -c:v copy -c:a aac -b:a 192k \
+  MY_FILM_score_only.mp4
+```
+
+For dialogue-heavy films, **0.28 is a good starting volume for the music**.
+Bump to 0.35 if the score feels too thin under the dialogue, drop to 0.20
+if speech intelligibility suffers.
+
+For more control (sidechain ducking — music drops automatically when
+dialogue is detected), use the `stitch` subcommand, which applies the same
+filter chain `aeon-radio-drama` uses:
+
+```bash
+python scripts/movie_maker_fast.py stitch clips_manifest.json \
+    --music my_film_score.flac \
+    --music-volume 0.28 \
+    -o MY_FILM_with_score.mp4
+```
+
+### Validated example
+
+`examples/the_strangers_tea.json` is the production-tested medina screenplay
+(52s, 6 prompt-relay sequences, dialogue + character descriptions +
+no-music negative). End-to-end: ~7 min render + ~1 min music gen + a
+single ffmpeg mux = a finished cinematic short with composed score.
+
 ## Companion repos
 
 The natural pipeline:

@@ -96,6 +96,44 @@ Schema in `SKILL.md` § Screenplay format. Outputs:
 
 `--use-relay` auto-chunks consecutive scenes into Prompt Relay sequences (≤ `--relay-max-frames` per pass; default 489). Scenes with `relay_break: true` or tags `{transition, cut, scene_change}` force a new sequence. Hard cuts between sequences carry the previous sequence's last frame as the next sequence's seed image (uploaded via ComfyUI's `/upload/image` — no shared filesystem needed). Joint A/V by default; `--relay-no-audio` for video-only.
 
+### Production workflow for `--use-relay`: dialogue + custom music
+
+The relay flow generates joint A/V — model produces dialogue with lipsync AND a music bed in the same forward pass. The bundled music is rough and fights with any score you'd compose intentionally. The validated production pattern is to **suppress music in the relay output** and **add a custom score from `aeon-music-maker`** in post:
+
+1. **Author the screenplay JSON** with these top-level fields:
+   - `characters: { NAME: "<full visual description>" }` — names alone don't anchor identity; the wrapper needs visual specifics (skin tone, hair, distinctive clothing). Strongest cross-sequence identity signal.
+   - `negative_prompt: "music, soundtrack, score, instruments, drums, oud, melody, ambient music, deformed, mutilated, ..."` — CLIP-encoded as the negative conditioning. Suppresses the model's music bed so the dialogue + ambient stay clean.
+   - End the LAST scene of each sequence with **visual action AFTER the dialogue line** ("She lifts her cup and sips") — gives the model time to land the audio cleanly within the segment's frame budget.
+   - Give each dialogue line its own scene (or its own segment within a sequence) — packing 2+ exchanges into one scene clips the audio.
+
+2. **Render** the relay sequences as usual, then concatenate the per-sequence MP4s:
+   ```bash
+   python scripts/movie_maker_fast.py screenplay <project>.json --use-relay
+   cd output/movie_fast/<project>
+   ls sequence_*.mp4 | sed -E "s/^/file '/;s/$/'/" > concat.txt
+   ffmpeg -f concat -safe 0 -i concat.txt -c copy <PROJECT>.mp4
+   ```
+
+3. **Compose the score** in `aeon-music-maker` with section tags keyed to the film beats:
+   ```bash
+   python scripts/music_maker.py \
+       --prompt "<style>. [intro: ... 8 seconds] [verse: ... 8 seconds] [build: ... 9 seconds] [climax: ... 9 seconds] [outro: ... 9 seconds]" \
+       --duration <film_duration_in_seconds> \
+       --variant xl_turbo --master orchestral \
+       -o output/music/<project>_score.flac
+   ```
+
+4. **Mux dialogue + score** with the score at ~28% volume so speech stays intelligible:
+   ```bash
+   ffmpeg -i <PROJECT>.mp4 -i <project>_score.flac \
+     -filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.28[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[a]" \
+     -map 0:v -map "[a]" \
+     -c:v copy -c:a aac -b:a 192k \
+     <PROJECT>_with_score.mp4
+   ```
+
+Reference: `examples/the_strangers_tea.json` (52s medina short, dialogue-heavy, no-music negative). End-to-end: ~7 min render + ~1 min music gen + 5 sec mux. See README "Production workflow: dialogue + custom music" for the full walkthrough.
+
 ### Stitch (final mux)
 
 ```bash

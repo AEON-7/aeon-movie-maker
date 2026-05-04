@@ -1,0 +1,130 @@
+{
+  "title": "the_strangers_tea",
+  "style": "cinematic, golden-hour photography, photorealistic faces with natural skin texture, IMAX-quality, lush warm color palette of saffron and crimson and gold, soft afternoon light filtering through carved screens, intimate dialogue framing, natural fabric motion in the breeze",
+
+  "setting": "vibrant Middle Eastern medina in the late afternoon golden hour — ornate palaces with intricate geometric blue and gold tile work, marble fountains with running water, painted wooden doors studded with brass, hanging copper lanterns casting warm light, bougainvillea climbing the stone walls, narrow winding stone alleys, distant city sounds and a faint call to prayer",
+
+  "characters": {
+    "DANIEL": "Western man in his early thirties, light olive skin, neatly trimmed dark beard, tousled chestnut-brown hair, wearing a wrinkled beige linen shirt with sleeves rolled up, dark canvas trousers, scuffed brown leather boots, a worn brown leather messenger bag across his shoulder, expression curious and slightly weary, kind eyes",
+    "LEILA": "Middle Eastern woman in her late twenties, warm olive skin, long dark wavy hair partially covered by a colorful patterned headscarf in deep red and gold, large kohl-lined dark eyes, wearing a flowing crimson and gold embroidered kaftan with intricate floral patterns, small gold hoop earrings, calm confident posture, gentle knowing smile"
+  },
+
+  "scenes": [
+    {
+      "description": "Daniel walks alone through a narrow stone medina alley, golden afternoon sunlight filtering down between tall walls, hanging copper lanterns swaying gently, his beige linen shirt slightly damp with sweat, his expression confused as he glances down at a folded paper map",
+      "camera": "tracking shot from behind, slow handheld follow",
+      "duration": 4.0,
+      "mood": "lost, curious, slightly uneasy",
+      "characters": ["DANIEL"]
+    },
+    {
+      "description": "Close-up on Daniel as he stops in front of a wall covered in faded blue tile work, lowers the map, runs a hand through his hair. He looks up at the sky, then looks both ways down the empty alley, his lips moving naturally as he speaks",
+      "camera": "medium close-up, eye-level",
+      "duration": 5.0,
+      "mood": "frustrated, slightly worried",
+      "characters": ["DANIEL"],
+      "dialogue": [
+        {"character": "DANIEL", "line": "I should have turned left at the fountain."}
+      ]
+    },
+    {
+      "description": "Wide shot of the alley. A carved wooden door at the end of the lane creaks open. Leila stands in the doorway in her crimson and gold kaftan, watching Daniel, a knowing smile playing at her lips. Bougainvillea blossoms drift down between them in the breeze",
+      "camera": "slow push-in toward the doorway from Daniel's perspective",
+      "duration": 4.0,
+      "mood": "mysterious, inviting, fated",
+      "characters": ["LEILA"],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Medium shot of Leila stepping out of the doorway, walking gracefully toward Daniel, her crimson kaftan flowing behind her. Daniel turns to face her, surprised, his hand instinctively going to his messenger bag strap. She speaks with warm confidence, lips moving naturally",
+      "camera": "two-shot at eye level, slow approach",
+      "duration": 5.0,
+      "mood": "warm encounter, the meeting",
+      "characters": ["LEILA", "DANIEL"],
+      "dialogue": [
+        {"character": "LEILA", "line": "You look lost, traveler. The medina has many faces."}
+      ]
+    },
+    {
+      "description": "Daniel and Leila walk side by side through a sunlit ornate alley, past a marble fountain with running water reflecting the golden light, past hanging painted lanterns. He glances at her in profile, fascinated. She looks ahead, leading. After her line she gestures gently toward the alley turn",
+      "camera": "tracking dolly shot following them from the side",
+      "duration": 5.0,
+      "mood": "guided, growing trust",
+      "characters": ["LEILA", "DANIEL"],
+      "dialogue": [
+        {"character": "DANIEL", "line": "I'm Daniel. Thank you, I was completely turned around."},
+        {"character": "LEILA", "line": "Leila. Come, my home is just ahead."}
+      ],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Leila pushes open a tall ornate brass-studded wooden door. Beyond it: a stunning palace courtyard with a central marble fountain, blue and gold tile mosaics on every wall, peacocks wandering, lemon trees in copper pots, late golden light pouring through carved screens overhead",
+      "camera": "reverse-angle reveal as the door opens",
+      "duration": 4.0,
+      "mood": "awe, wonder, sanctuary",
+      "characters": ["LEILA", "DANIEL"]
+    },
+    {
+      "description": "Wide shot of the courtyard. Daniel and Leila now sit at a low ornate brass table covered in colorful cushions. A copper teapot steams between them. Leila pours mint tea into small glass cups with practiced grace, the amber liquid arcing between vessels. After pouring she looks up at Daniel and smiles",
+      "camera": "slow pull-back, intimate two-shot",
+      "duration": 5.0,
+      "mood": "intimate, hospitable, peaceful",
+      "characters": ["LEILA", "DANIEL"],
+      "dialogue": [
+        {"character": "LEILA", "line": "Welcome. My family has sat at this table for nine generations."}
+      ],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Close-up two-shot at the tea table. Daniel takes the small glass cup carefully, his eyes wide with wonder, looking around the courtyard then back at Leila. Steam rises from his cup. After he speaks she lifts her own cup to her lips and sips, watching him over the rim",
+      "camera": "intimate close-up alternating between faces",
+      "duration": 5.0,
+      "mood": "growing intimacy, curiosity",
+      "characters": ["DANIEL", "LEILA"],
+      "dialogue": [
+        {"character": "DANIEL", "line": "Nine generations? Your family has lived here that long?"}
+      ]
+    },
+    {
+      "description": "Medium close-up on Leila as she sets down her tea cup with a soft sound, reaches into a small carved wooden box on the table, and lifts out a faded sepia photograph. She turns it toward Daniel. Late golden light catches her face. After she speaks her eyes hold his steadily",
+      "camera": "slow push-in to her face, then to the photograph in her hand",
+      "duration": 5.0,
+      "mood": "the reveal building, knowing",
+      "characters": ["LEILA"],
+      "dialogue": [
+        {"character": "LEILA", "line": "My grandfather, here in this courtyard. And the man beside him. Your grandfather, perhaps?"}
+      ],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Close-up on Daniel's face as he takes the old photograph carefully. His eyes widen in slow recognition, his lips parting slightly. The photograph trembles in his hand. The amber tea cools beside him. After he whispers, he looks up at Leila with stunned awe",
+      "camera": "intense close-up on Daniel, slight rack focus to the photograph",
+      "duration": 5.0,
+      "mood": "revelation, stunned recognition",
+      "characters": ["DANIEL"],
+      "dialogue": [
+        {"character": "DANIEL", "line": "He wrote about this place. In letters I found after he died. I came here looking for it."}
+      ]
+    },
+    {
+      "description": "Two-shot. Leila reaches across the table and places her hand gently over Daniel's. Sunset light pours through the carved screens above, casting golden filigree patterns across the table, their faces, the photograph between them. After she speaks they share a long quiet moment",
+      "camera": "wide intimate two-shot, slow gentle camera lift",
+      "duration": 5.0,
+      "mood": "the meeting was meant to be, sacred connection",
+      "characters": ["LEILA", "DANIEL"],
+      "dialogue": [
+        {"character": "LEILA", "line": "I have been waiting for someone of your line to return."}
+      ],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Wide cinematic tableau of the palace courtyard. Daniel and Leila sit at the table together in profile, golden sunset light streaming through the carved screens, casting long warm shadows. The fountain still runs. A peacock walks slowly past. Steam rises from the teapot between them. They sit in comfortable silence, watching the light fade",
+      "camera": "static wide cinematic shot, gentle slow zoom out",
+      "duration": 4.0,
+      "mood": "peaceful resolution, beginning of something deeper",
+      "characters": ["LEILA", "DANIEL"]
+    }
+  ],
+
+  "negative_prompt": "music, background music, soundtrack, score, instruments, drums, drum beat, oud, lute, sitar, flute, percussion, melody, melodic, instrumental, ambient music, song, singing, chanting, deformed, mutilated, extra limbs, extra fingers, malformed face, blurry, low quality, watermark, text, subtitles, cartoon"
+}

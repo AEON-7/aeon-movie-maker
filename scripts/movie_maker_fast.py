@@ -784,6 +784,9 @@ def build_ltx_prompt_relay_workflow(
     save_audio=True,             # if False, drop audio from VHS_VideoCombine output
     filename_prefix=None,
     models=None,                 # override any of PROMPT_RELAY_DEFAULTS
+    negative_prompt=None,        # if set, encode through CLIPTextEncode (real anatomy/quality
+                                 # negatives) instead of ConditioningZeroOut. Canonical workflow
+                                 # at CFG 1 doesn't need this; at CFG ≥ 3 negatives matter a LOT.
 ):
     """Assemble the LTX 2.3 Prompt Relay workflow as a ComfyUI API-format dict.
 
@@ -965,11 +968,21 @@ def build_ltx_prompt_relay_workflow(
                      "time_units": "frames",
                  }}
 
-    # ConditioningZeroOut on the positive gives a true-zero negative conditioning
-    # (canonical example does this rather than encoding a separate negative prompt
-    # — matches the model's training distribution at CFG≈1).
-    wf["121"] = {"class_type": "ConditioningZeroOut",
-                 "inputs": {"conditioning": ["120", 1]}}
+    # Negative conditioning. Two modes:
+    #   - At CFG ≈ 1 (canonical): ConditioningZeroOut on the positive gives a
+    #     true-zero negative; matches the model's training distribution. The
+    #     example workflow does this.
+    #   - At CFG ≥ 3 (quality): a true-zero negative gives the model no
+    #     anatomy / quality guardrails, which produces mutilated characters
+    #     and "frozen" decorative elements (motionless lightning, etc.) that
+    #     a good negative prompt suppresses. So when the caller supplies a
+    #     negative_prompt string, encode it through CLIPTextEncode instead.
+    if negative_prompt:
+        wf["121"] = {"class_type": "CLIPTextEncode",
+                     "inputs": {"text": negative_prompt, "clip": ["103", 0]}}
+    else:
+        wf["121"] = {"class_type": "ConditioningZeroOut",
+                     "inputs": {"conditioning": ["120", 1]}}
     wf["122"] = {"class_type": "LTXVConditioning",
                  "inputs": {
                      "positive": ["120", 1],
@@ -1409,8 +1422,26 @@ def _scene_to_relay_segment(scene, fps):
 def _build_sequence_wrapper(screenplay, sequence):
     """Compose the global anchor prompt for a Prompt Relay sequence.
 
-    Pulls screenplay-level style/setting + the union of characters appearing
-    in this sequence's scenes. Falls back to a generic cinematic anchor.
+    Pulls screenplay-level style/setting + the FULL VISUAL DESCRIPTIONS of any
+    characters appearing in this sequence (not just their names — names alone
+    give the model nothing to anchor on). The wrapper is what holds character
+    consistency across the timeline; the more visually-specific it is, the
+    better identity persists.
+
+    Screenplay top-level format:
+        {
+          "title": "...",
+          "style": "...",
+          "setting": "...",
+          "characters": {
+            "VISHNU": "blue-skinned divine being with four arms, ...",
+            "SHIVA": "pale ash-streaked skin, third eye, trident, ..."
+          },
+          "scenes": [...]
+        }
+
+    Falls back gracefully if `characters` is a list (just names) instead of a
+    dict (name → description map).
     """
     bits = []
     if screenplay.get("title"):
@@ -1419,14 +1450,30 @@ def _build_sequence_wrapper(screenplay, sequence):
         bits.append(f"style: {screenplay['style']}")
     if screenplay.get("setting"):
         bits.append(f"setting: {screenplay['setting']}")
-    chars = []
+
+    # Collect names appearing in this sequence's scenes
+    char_names = []
     for sc in sequence["scenes"]:
         for c in (sc.get("characters") or []):
-            if c not in chars:
-                chars.append(c)
-    if chars:
-        bits.append(f"characters: {', '.join(chars)}")
-    bits.append("a single continuous cinematic shot, smooth motion, consistent lighting")
+            if c not in char_names:
+                char_names.append(c)
+
+    if char_names:
+        # If screenplay has a `characters` dict mapping name → description, use
+        # the descriptions (much stronger anchor). Otherwise fall back to names.
+        char_descs = screenplay.get("characters") or {}
+        if isinstance(char_descs, dict) and any(n in char_descs for n in char_names):
+            for name in char_names:
+                desc = char_descs.get(name, "").strip()
+                if desc:
+                    bits.append(f"{name} — {desc}")
+                else:
+                    bits.append(name)
+        else:
+            bits.append(f"characters: {', '.join(char_names)}")
+
+    bits.append("a single continuous cinematic shot, smooth motion, consistent lighting, "
+                "character identity preserved across the shot")
     return ". ".join(bits)
 
 
@@ -1440,6 +1487,7 @@ def render_screenplay_relay(screenplay_path, output_dir=None, *,
                             save_audio=True,
                             carry_last_frame=True,
                             max_frames=MAX_RELAY_FRAMES,
+                            negative_prompt=None,
                             limit=None):
     """Drive a screenplay through the LTX 2.3 Prompt Relay pipeline.
 
@@ -1479,6 +1527,11 @@ def render_screenplay_relay(screenplay_path, output_dir=None, *,
     sequences = chunk_scenes_into_relay_sequences(scenes, fps, max_frames=max_frames)
 
     print(f"=== Movie Maker Fast — Screenplay Run (Prompt Relay) ===")
+    # Negative-prompt resolution order: explicit function arg > screenplay top-level
+    # `negative_prompt` field > None (falls back to ConditioningZeroOut).
+    if not negative_prompt:
+        negative_prompt = screenplay.get("negative_prompt")
+
     print(f"  screenplay:  {screenplay_path}")
     print(f"  project:     {project_name}")
     print(f"  scenes:      {len(scenes)}{' (limited)' if limit else ''}")
@@ -1492,6 +1545,7 @@ def render_screenplay_relay(screenplay_path, output_dir=None, *,
     print(f"  dims/fps:    {width}x{height} @ {fps}fps")
     print(f"  sampler:     {sampler_name} / {scheduler_name} / {steps} steps / CFG {cfg}")
     print(f"  audio:       {'KEEP (joint A/V per sequence)' if save_audio else 'DROP (video-only)'}")
+    print(f"  negative:    {'CLIP-encoded (' + str(len(negative_prompt or '')) + ' chars)' if negative_prompt else 'ConditioningZeroOut (canonical)'}")
     print(f"  base_seed:   {base_seed}")
     print(f"  output:      {output_dir}")
     print()
@@ -1526,6 +1580,7 @@ def render_screenplay_relay(screenplay_path, output_dir=None, *,
                 sampler_name=sampler_name, scheduler_name=scheduler_name,
                 use_lora=use_lora, lora_strength=lora_strength,
                 sage_attention=True, save_audio=save_audio,
+                negative_prompt=negative_prompt,
                 filename_prefix=seq_prefix,
             )
             t0 = time.time()
@@ -2016,6 +2071,11 @@ def main():
              "the canonical example workflow has it bypassed.")
     pc.add_argument("--relay-lora-strength", type=float, default=0.5,
         help="Distill-1.1 LoRA strength when --relay-use-lora is set. Default 0.5.")
+    pc.add_argument("--relay-negative-prompt", default=None,
+        help="Encode a real negative prompt through CLIP (vs the default ConditioningZeroOut "
+             "which gives the model NO anatomy / quality guardrails). At CFG ≈ 1 (canonical) "
+             "leaving this unset is fine; at higher CFG values you almost certainly want "
+             "DEFAULT_NEGATIVE here to suppress mutilated anatomy and frozen decorative elements.")
 
     # Subcommand: screenplay  — drive a full screenplay JSON
     ps = sub.add_parser("screenplay", help="Render all scenes from a screenplay JSON")
@@ -2066,6 +2126,10 @@ def main():
     ps.add_argument("--relay-max-frames", type=int, default=MAX_RELAY_FRAMES,
         help=f"With --use-relay: max frames per single Prompt Relay pass "
              f"(default {MAX_RELAY_FRAMES} — validated ceiling on Spark).")
+    ps.add_argument("--relay-negative-prompt", default=None,
+        help="With --use-relay: encode a real negative prompt through CLIP. Strongly recommended "
+             "at CFG ≥ 3 to avoid mutilated anatomy and frozen scene elements (motionless lightning, "
+             "static fire, etc.). Pass DEFAULT_NEGATIVE for the same negative the per-scene flow uses.")
 
     # Subcommand: stitch  — concat clips from manifest + optional audio
     pst = sub.add_parser("stitch", help="Concatenate clips from a manifest with optional audio mux")
@@ -2123,6 +2187,7 @@ def main():
                 save_audio=args.relay_save_audio,
                 carry_last_frame=args.carry_last_frame,
                 max_frames=args.relay_max_frames,
+                negative_prompt=args.relay_negative_prompt,
             )
         else:
             render_screenplay(
@@ -2215,6 +2280,7 @@ def main():
             lora_strength=args.relay_lora_strength,
             sage_attention=True,
             save_audio=args.relay_save_audio,
+            negative_prompt=args.relay_negative_prompt or tl_doc.get("negative_prompt"),
             filename_prefix=internal_prefix,
         )
         print("=== Movie Maker Fast — Prompt Relay ===")

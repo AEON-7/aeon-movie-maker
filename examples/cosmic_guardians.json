@@ -1,0 +1,70 @@
+{
+  "title": "cosmic_guardians_v2",
+  "style": "epic cinematic, hyperreal divine aesthetic, IMAX-quality VFX, sacred mythological iconography, photorealistic faces, natural fabric motion, real lightning that arcs and crackles, dynamic light",
+
+  "setting": "cosmic battlefield between realms — ancient temple ruins floating in nebulae, stardust drifting between cracked pillars, the void of space behind",
+
+  "characters": {
+    "VISHNU": "Lord Vishnu — divine male figure with deep blue skin, four arms, holding a golden spinning chakra in one upper hand and a white conch shell in the other, golden silk robes with red trim, peaceful serene face with gentle eyes, a small golden crown, glowing aura around his body",
+    "SHIVA": "Lord Shiva — divine male warrior with pale ash-grey skin, a glowing third eye in the middle of his forehead, holding a tall silver trident, a green serpent coiled around his neck, dreadlocks of dark matted hair flowing freely, fierce intense expression, a small crescent moon ornament in his hair, wearing a tiger-skin loincloth"
+  },
+
+  "scenes": [
+    {
+      "description": "Wide cosmic shot. Distant galaxies bleed crimson light. Jagged glowing cracks split the void. Ancient stone temples float on a small island in the foreground, silhouetted",
+      "camera": "slow drone push-in toward the temples",
+      "duration": 4.0,
+      "mood": "ominous"
+    },
+    {
+      "description": "Lord Vishnu descends from the sky, four blue arms outstretched, the golden chakra spinning above his right hand, golden silk flowing in cosmic wind, his face calm and resolute",
+      "camera": "rising hero shot, slight tilt up",
+      "duration": 4.0,
+      "mood": "majestic, hopeful",
+      "characters": ["VISHNU"],
+      "dialogue": [
+        {"character": "VISHNU", "line": "The cosmos cries out. Dharma demands a response."}
+      ]
+    },
+    {
+      "description": "Close on Lord Vishnu's face as he speaks, his lips moving naturally with each word. Behind him, the golden chakra hovers, spinning steadily and casting reflected golden light on his blue skin",
+      "camera": "medium close-up on Vishnu's face",
+      "duration": 4.0,
+      "mood": "powerful, decisive",
+      "characters": ["VISHNU"],
+      "dialogue": [
+        {"character": "VISHNU", "line": "Sudarshana. Restore the void."}
+      ],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Lord Shiva emerges from a pillar of cosmic blue flame, ash-streaked skin, third eye blazing with white light, silver trident gripped in his hand, the serpent at his neck moving slowly, his hair flowing in supernatural wind",
+      "camera": "low-angle hero shot, slow rotation",
+      "duration": 4.0,
+      "mood": "fierce, primal",
+      "characters": ["SHIVA"]
+    },
+    {
+      "description": "Close on Lord Shiva's face as he speaks, his lips clearly visible as he pronounces each word, his third eye glowing intensely. Behind him cosmic energy swirls",
+      "camera": "medium close-up on Shiva's face",
+      "duration": 4.0,
+      "mood": "fierce intent",
+      "characters": ["SHIVA"],
+      "dialogue": [
+        {"character": "SHIVA", "line": "Brother. The destruction begins with me."}
+      ],
+      "tags": ["transition"]
+    },
+    {
+      "description": "Wide shot. Lord Vishnu and Lord Shiva stand side by side atop a now-restored floating island. Vishnu's blue divine aura on the left, Shiva's white-hot energy on the right, the auras visibly merging into golden radiance between them. Cosmos peaceful behind, embers falling slowly",
+      "camera": "slow gentle pull-back, tableau composition",
+      "duration": 4.0,
+      "mood": "triumphant, sacred unity",
+      "characters": ["VISHNU", "SHIVA"],
+      "dialogue": [
+        {"character": "VISHNU", "line": "Together we hold."},
+        {"character": "SHIVA", "line": "Together we let go."}
+      ]
+    }
+  ]
+}
