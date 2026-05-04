@@ -277,16 +277,56 @@ This is the most important step for quality. Read carefully:
    within a sequence). DON'T pack 2 exchanges into one scene — the model
    needs ~2-3 seconds of segment time per spoken line for clean audio.
 
-4. **End the LAST scene of each sequence with visual action AFTER the
+4. **Match scene `duration` to dialogue length, with a buffer.**
+   LTX 2.3's audio head needs roughly **0.5 s per spoken word** plus
+   ~1.5 s of head/tail buffer (visual setup before the line + breath/
+   action after). Scene duration ≥ `0.5 × word_count + 1.5`.
+
+   | dialogue | minimum `duration` |
+   |---|---|
+   | "What is this?" (3 words) | 3.0 s |
+   | "I will go to the fire tonight. Alone." (8 words) | 5.0 s |
+   | "He fears the tree. The crystal is older than the abyss. Lead him there. Make him follow you in." (19 words) | **8.0 s** (or split across 2 scenes) |
+
+   If a dialogue line is **longer than ~12 words**, either bump
+   `duration` to 7+ seconds OR split the line across two consecutive
+   scenes within the same sequence (smooth morphing keeps the visual
+   continuous):
+   ```json
+   {"description": "...", "duration": 5.0,
+    "dialogue": [{"character": "X", "line": "First half of the long line."}]},
+   {"description": "...continuing action...", "duration": 5.0,
+    "dialogue": [{"character": "X", "line": "Second half of the long line."}]}
+   ```
+   Failing this, LTX **truncates the dialogue mid-word** at the segment
+   boundary — and there's no fix in post (the audio simply isn't there).
+
+5. **End the LAST scene of each sequence with visual action AFTER the
    dialogue line** ("She lifts her cup and sips" / "He looks toward the
    window"). This gives the model time to land the audio cleanly within
    the segment's frame budget. Without this, dialogue can clip at the
    segment boundary.
 
-5. **Use `tags: ["transition"]`** on scenes that should start a new
+6. **Use `tags: ["transition"]`** on scenes that should start a new
    sequence (i.e., a hard cut to a different time/location/character
    entrance). Within a sequence the model morphs smoothly; between
    sequences there's a hard cut.
+
+7. **Don't worry about scene-level narrator interjections in dialogue-
+   less scenes.** LTX's audio head sometimes generates ambient narrator-
+   style speech for visually-rich dialogue-less scenes (drawn from the
+   scene description itself). This is usually atmospheric and good. If
+   a specific narration intrusion is unwanted, remove it post-hoc with
+   ASR-detected `volume=0:enable='between(t,...)'` filtering on the
+   per-sequence MP4 (see the title-narration scrubber pattern below).
+
+8. **The screenplay's `title` field will NOT be voiced.** As of v0.5,
+   `_build_sequence_wrapper` deliberately omits the title from the
+   positive prompt — earlier versions had a bug where LTX read the
+   `Film "<title>"` text aloud as a narrator title-card interjection
+   ("The Prince of Two Threads") at silent sequence boundaries. The
+   fix lives in the wrapper, not the screenplay format. Just write a
+   normal title.
 
 **Step 2: Run**
 
@@ -305,21 +345,26 @@ Use the `concat-relay` subcommand (smoother than raw ffmpeg concat):
 
 ```bash
 # Hard cuts (fastest — instant, just remuxes; no quality loss)
+# RECOMMENDED for dialogue-heavy films — preserves every word at sequence
+# boundaries. xfade > 0 will acrossfade audio between sequences, which
+# clips dialogue tails / heads if a sequence ends or starts on a spoken line.
 python scripts/movie_maker_fast.py concat-relay \
   --input-dir output/movie_fast/my_dialogue_film \
+  --xfade 0 \
   -o output/movie_fast/my_dialogue_film/MY_DIALOGUE_FILM.mp4
 
-# OR with crossfade dissolves at sequence boundaries (requires re-encode,
-# but eliminates jarring jump-cuts. 0.5-1.0 sec is typical; default 0.0)
+# OR with crossfade dissolves at sequence boundaries (use ONLY for films
+# with no dialogue at sequence edges — e.g., music videos, abstract pieces.
+# 0.5-1.0s is typical. The crossfade will eat audio on both sides.)
 python scripts/movie_maker_fast.py concat-relay \
   --input-dir output/movie_fast/my_dialogue_film \
   --xfade 0.8 \
   -o output/movie_fast/my_dialogue_film/MY_DIALOGUE_FILM.mp4
 
-# OR also write a yuv444p10le master sibling for color grading / archival
+# Add --master to also write a yuv444p10le sibling for color grading / archival
 python scripts/movie_maker_fast.py concat-relay \
   --input-dir output/movie_fast/my_dialogue_film \
-  --xfade 0.8 --master \
+  --xfade 0 --master \
   -o output/movie_fast/my_dialogue_film/MY_DIALOGUE_FILM.mp4
 # → produces both MY_DIALOGUE_FILM.mp4 (yuv420p, universal playback)
 #   and MY_DIALOGUE_FILM_master.mp4 (yuv444p10le, archival/grading source)

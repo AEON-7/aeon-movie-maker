@@ -1456,8 +1456,14 @@ def _build_sequence_wrapper(screenplay, sequence):
     dict (name → description map).
     """
     bits = []
-    if screenplay.get("title"):
-        bits.append(f'Film "{screenplay["title"]}"')
+    # NB: deliberately omit the title here. LTX 2.3's joint A/V audio head
+    # treats text in the positive prompt as fair game for voice generation,
+    # and has been observed reading the title aloud as narrator-style
+    # interjections at sequence boundaries (where the audio would otherwise
+    # be silent → the model fills the gap with whatever speakable text it
+    # finds in the conditioning). Style + setting + character descriptions
+    # are visual-language and don't trigger the bug; titles are the only
+    # quoted/proper-noun string in the wrapper, and that's the trigger.
     if screenplay.get("style"):
         bits.append(f"style: {screenplay['style']}")
     if screenplay.get("setting"):
@@ -1486,6 +1492,11 @@ def _build_sequence_wrapper(screenplay, sequence):
 
     bits.append("a single continuous cinematic shot, smooth motion, consistent lighting, "
                 "character identity preserved across the shot")
+    # Audio anchor: at canonical CFG=1.0 the negative prompt collapses to a
+    # no-op (guided = neg + 1*(pos-neg) = pos), so music suppression must live
+    # in the POSITIVE prompt. We anchor the joint A/V audio head toward
+    # voice + ambient and away from instrumental score.
+    bits.append("audio is silent ambient — only spoken dialogue and natural environmental sounds (wind, footsteps, fire, water, breath); no music, no soundtrack, no instrumental score")
     return ". ".join(bits)
 
 
@@ -2256,7 +2267,11 @@ def main():
     ps.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
     ps.add_argument("--fps", type=int, default=DEFAULT_FPS)
     ps.add_argument("--steps", type=int, default=DEFAULT_STEPS)
-    ps.add_argument("--cfg", type=float, default=DEFAULT_CFG)
+    # Sentinel default (None) lets the dispatch substitute path-specific
+    # defaults: 1.5 for the Prompt Relay path (distilled-fp8 sweet spot),
+    # DEFAULT_CFG (3.0) for the per-scene I2V path. Users who pass --cfg
+    # explicitly always get their value through.
+    ps.add_argument("--cfg", type=float, default=None)
     ps.add_argument("--seed", type=int, default=None)
     ps.add_argument("--limit", type=int, default=None,
         help="Only render the first N scenes (useful for testing)")
@@ -2360,17 +2375,39 @@ def main():
             # sequence's last frame as seed image. Joint A/V output by
             # default (model generates audio with video).
             #
-            # Prompt Relay uses different sampler defaults (8 steps, CFG 1.0,
+            # Prompt Relay uses different sampler defaults (8 steps,
             # euler_ancestral / linear_quadratic) than the per-scene I2V flow.
             # Honor user-provided overrides if explicitly set; otherwise use
             # the relay-tuned defaults rather than the I2V path's defaults.
             relay_steps = args.steps if args.steps != DEFAULT_STEPS else 8
-            relay_cfg   = args.cfg   if args.cfg   != DEFAULT_CFG else 1.0
             relay_sampler = args.sampler if args.sampler != "euler" else "euler_ancestral"
+            # CFG: pass through whatever the user supplied. Notes on choice:
+            #   - CFG 1.0 (canonical LTX 2.3 distilled-fp8 example) is fast but
+            #     the classifier-free guidance math collapses (guided = neg +
+            #     1*(pos-neg) = pos) so the negative prompt becomes a no-op
+            #     — music suppression and anatomy negatives don't engage at all.
+            #   - CFG ≥ 2.5 fries distilled-fp8 visuals (oversaturated colors,
+            #     pumped contrast, smoothed-out frames). Validated to fry on
+            #     the_prince_of_two_threads at CFG=2.0 and CFG=3.0.
+            #   - **CFG 1.5 is the production sweet spot** — negative prompt
+            #     gets ~25% bite (combined with the positive-prompt audio
+            #     anchor in `_build_sequence_wrapper` that's CFG-independent,
+            #     this is enough for music suppression), and visuals stay
+            #     clean. Default I2V CFG (3.0) is too high for the relay path.
+            #   - Render time at CFG > 1.0 is ~2x CFG=1.0 (two forward passes
+            #     per step instead of one).
+            # Sentinel: if user didn't pass --cfg, args.cfg is None →
+            # substitute the relay sweet-spot default (1.5).
+            relay_cfg = args.cfg if args.cfg is not None else 1.5
             # Relay also uses square dims by convention; only override the
             # I2V-flow defaults when the user explicitly bumped them.
-            relay_w = args.width  if args.width  != DEFAULT_WIDTH  else 640
-            relay_h = args.height if args.height != DEFAULT_HEIGHT else 640
+            # Pass through user's explicit dimensions. (Earlier logic tried to
+            # auto-substitute relay-tuned 640×640 when user didn't override the
+            # I2V defaults, but that made `--width 832 --height 480` silently
+            # fall back to 640×640 because 832/480 IS the I2V default. Honor
+            # what the user passes; if they want 640×640, pass that explicitly.)
+            relay_w = args.width
+            relay_h = args.height
             render_screenplay_relay(
                 args.screenplay_path, output_dir=args.output_dir,
                 base_seed=args.seed,
@@ -2385,11 +2422,15 @@ def main():
                 negative_prompt=args.relay_negative_prompt,
             )
         else:
+            # I2V path: sentinel → DEFAULT_CFG (3.0). Mode-specific defaults
+            # (mode_cfg["default_cfg"]) are still applied inside render_screenplay
+            # if user didn't override.
+            i2v_cfg = args.cfg if args.cfg is not None else DEFAULT_CFG
             render_screenplay(
                 args.screenplay_path, output_dir=args.output_dir,
                 mode=args.mode, base_seed=args.seed,
                 width=args.width, height=args.height, fps=args.fps,
-                steps=args.steps, cfg=args.cfg, limit=args.limit,
+                steps=args.steps, cfg=i2v_cfg, limit=args.limit,
                 persistence=args.persistence, sampler_name=args.sampler,
                 carry_last_frame=args.carry_last_frame,
             )
