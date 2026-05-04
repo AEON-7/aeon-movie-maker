@@ -6,16 +6,46 @@
 
 Part of the **AEON Media Production** family.
 
+> ⚡️ **AI agents using this tool: read [AGENTS.md](AGENTS.md) first.**
+> It's a complete copy-pasteable runbook with a glossary, decision tree,
+> literal recipes, and a troubleshooting table. You should not need to
+> consult any other file.
+
 ## What this gives you
 
-- **Three modes** — `clip` (single shot), `screenplay` (multi-shot film), `stitch` (audio mux with sidechain ducking)
+- **Three subcommands** — `clip` (single shot), `screenplay` (multi-shot film), `stitch` (audio mux with sidechain ducking)
+- **Two screenplay flows** — per-scene I2V (silent video, audio added at stitch time) OR Prompt Relay (`--use-relay`, joint A/V with model-generated dialogue + lipsync)
 - **LTX 2.3 22B fp8** — Lightricks' video pipeline. Three sub-modes: `fast` (distilled FP8), `quality` (non-distilled FP8 + 0.5 distill LoRA), `abstract` (drops physics LoRAs for non-realistic content)
-- **Last-frame carry-forward** — between sequential clips, the final frame of clip N becomes the seed image for clip N+1, preserving character appearance + lighting + composition
-- **Persistence knob** — `--persistence 0–1` controls how strictly the seed image constrains the next clip (0 = free, 1 = locked)
+- **Last-frame carry-forward** — between sequential clips OR Prompt Relay sequences, the final frame becomes the seed image for the next, preserving character appearance + lighting + composition
 - **Per-character seed offsets** — stable hash so the same character appears consistent across an entire screenplay
 - **Per-scene LoRA routing** — automatic style-tag → LoRA selection (cinematic, anime, pixar, etc.)
-- **T2V / I2V** — text-to-video or image-to-video. Audio comes from the separate audio stack (Qwen3-TTS / ACE-Step / MMAudio) and is muxed in at stitch time.
+- **T2V / I2V** — text-to-video or image-to-video
+- **Joint A/V with dialogue + lipsync** (Prompt Relay flow only) — model generates audio matching mouth motion in the same forward pass
 - **Sidechain-ducked mix** at stitch time — music drops ~12 dB under speech, then `loudnorm I=-16:TP=-1.5:LRA=11`
+
+## Glossary
+
+The terms below are used precisely throughout this codebase. If you're
+unsure what something means, this is the canonical definition.
+
+| Term | What it means |
+|---|---|
+| **ComfyUI** | The model-serving program that actually generates the pixels. This tool sends it workflow instructions over HTTP. Default URL `http://127.0.0.1:8188`. |
+| **LTX 2.3** | The 22B-parameter video model. Two main checkpoint variants: `distilled-fp8` (fast, lower fidelity) and `dev-fp8` (slower, higher fidelity). |
+| **Scene** | One continuous moment a human writes in a screenplay. Has description, duration in seconds, optional dialogue. The smallest authoring unit. |
+| **Sequence** (Prompt Relay) | One forward pass through the model. Contains 1–N scenes that morph smoothly into each other. Capped at 489 frames (~20s @ 24fps) per pass on Spark. |
+| **Segment** (Prompt Relay) | The portion of a sequence corresponding to one scene. Each segment gets its own prompt + dialogue conditioning. |
+| **Clip** (per-scene flow) | The MP4 file produced for one scene. One scene = one clip. |
+| **T2V** | Text-to-video. No starting image. |
+| **I2V** | Image-to-video. The first frame is constrained by a seed image. |
+| **Joint A/V** | Video AND audio produced in the same model forward pass. **Only the Prompt Relay flow does this.** Per-scene flow produces silent video. |
+| **Prompt Relay** | The `PromptRelayEncodeTimeline` ComfyUI node — takes multiple prompts with frame-budget weights and morphs through them in one continuous shot. Activated by the `--use-relay` flag. |
+| **Lipsync** | Speech audio matched to mouth motion. Triggered by writing `'CHARACTER says "line"'` patterns in the prompt (which the screenplay's `dialogue` array becomes automatically). |
+| **Carry-forward** | Between Prompt Relay sequences (hard cuts), the LAST FRAME of the previous sequence becomes the SEED IMAGE for the next. Maintains continuity across cuts. |
+| **Wrapper prompt** | The "global anchor" for a Prompt Relay sequence. Built from screenplay-level `style` + `setting` + character VISUAL DESCRIPTIONS (from the `characters` dict). The strongest cross-sequence identity signal. |
+| **Negative prompt** | Tells the model what NOT to generate. Critical for suppressing model-generated music in joint A/V output (so you can compose your own score). |
+| **Hard cut** | An abrupt scene change between two Prompt Relay sequences. Triggered by `relay_break: true` or `tags: ["transition"]` on a scene, OR automatically when a scene's frame count would overflow the per-sequence budget. |
+| **Stitch** | The `stitch` subcommand. Concatenates clips and muxes in dialogue + music + SFX with sidechain ducking. |
 
 ## Quick start
 
@@ -192,112 +222,32 @@ python scripts/movie_maker_fast.py stitch clips_manifest.json \
 ## Production workflow: dialogue + custom music
 
 The Prompt Relay flow (`screenplay --use-relay`) generates **joint A/V** —
-LTX 2.3 produces both the video and an audio track in a single forward pass.
-With dialogue lines in your screenplay scenes, the model generates speech
-with lipsync. But the model also tends to add a music bed of its own, which
-fights with any score you'd want to compose intentionally. This section
-documents the validated pattern for getting **clean dialogue from the
-relay + a custom-composed score from `aeon-music-maker`** muxed cleanly.
+LTX 2.3 produces video AND an audio track (with dialogue + lipsync) in a
+single forward pass. The model also tends to add a music bed of its own,
+which fights with any score you'd want to compose intentionally. The
+validated production pattern is to **suppress music in the relay output**
+and **add a custom score from [`aeon-music-maker`](https://github.com/AEON-7/aeon-music-maker)**
+muxed underneath the dialogue.
 
-### 1. Suppress music in the relay output
+The full step-by-step (with literal copy-pasteable commands, troubleshooting,
+output verification) lives in [**AGENTS.md → Recipe D**](AGENTS.md#recipe-d--full-production-dialogue--custom-music).
 
-In your screenplay JSON, set the top-level `negative_prompt` field to
-include music vocabulary alongside the standard anatomy negatives. The
-`render_screenplay_relay` flow honors this automatically (and you can
-override per-run with `--relay-negative-prompt`):
+The 30-second TL;DR:
 
-```json
-{
-  "title": "...",
-  "characters": { "...": "..." },
-  "scenes": [...],
+1. Write your screenplay JSON with a top-level `characters` dict (visual
+   descriptions, not just names) and a top-level `negative_prompt` that
+   includes `"music, soundtrack, score, instruments, drums, melody, ..."`
+   plus standard anatomy negatives.
+2. `python scripts/movie_maker_fast.py screenplay <yours>.json --use-relay`
+3. Concat the per-sequence MP4s with `ffmpeg -f concat`.
+4. Compose a score in `aeon-music-maker` matching your film's duration,
+   using `[section: ... N seconds]` tags keyed to your emotional beats.
+5. Mux: `ffmpeg -filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.28[a1];[a0][a1]amix..."`
 
-  "negative_prompt": "music, background music, soundtrack, score, instruments, drums, drum beat, oud, lute, sitar, flute, percussion, melody, melodic, instrumental, ambient music, song, singing, chanting, deformed, mutilated, extra limbs, extra fingers, malformed face, blurry, low quality, watermark, text, subtitles, cartoon"
-}
-```
-
-Behind the scenes this swaps the relay's default `ConditioningZeroOut`
-(zero-vector negative — no anatomy / quality guardrails) for a real
-CLIP-encoded negative. At canonical CFG 1 the negative still steers
-sufficiently to suppress the music; at CFG ≥ 3 the negative is essential
-for clean output.
-
-The relay pass now produces **dialogue + ambient room tone + (suppressed)
-music**. Render and concatenate the sequences as usual:
-
-```bash
-python scripts/movie_maker_fast.py screenplay my_film.json \
-    --use-relay \
-    --output-dir output/movie_fast/my_film
-
-cd output/movie_fast/my_film
-ls sequence_*.mp4 | sed -E "s/^/file '/;s/$/'/" > concat.txt
-ffmpeg -f concat -safe 0 -i concat.txt -c copy MY_FILM.mp4
-```
-
-### 2. Compose the score in `aeon-music-maker`
-
-The sister [`aeon-music-maker`](https://github.com/AEON-7/aeon-music-maker)
-tool wraps the same ACE-Step XL Turbo workflow that ships with
-`comfyui-aeon-spark`. Use **section tags** keyed to your film's emotional
-beats so the score breathes WITH the dialogue rather than running flat
-underneath it:
-
-```bash
-python scripts/music_maker.py \
-    --prompt "Middle Eastern cinematic score, Sufi-inspired mystical atmospheric. ney flute, oud, qanun, warm cello sustains, no drums, no percussion, organic acoustic, breathing room between phrases, loud-quiet-loud dynamics. [intro: solo ney flute in D minor, sparse single notes, mysterious, breathing room, 8 seconds] [verse: oud joins softly plucked, warm hopeful, 8 seconds] [bridge: qanun shimmer, gentle cello sustains, intimate, restrained, 9 seconds] [build: strings rise gradually, ney returns over swelling cello and oud, 9 seconds] [climax: full ensemble briefly opens, brief restrained peak, 9 seconds] [outro: resolve to ney and oud duet, fade to single sustained note, 9 seconds]" \
-    --duration 52 \
-    --bpm 60 \
-    --key "D minor" \
-    --variant xl_turbo \
-    --master orchestral \
-    --output output/music/my_film_score.flac
-```
-
-Match `--duration` to your film's actual length (run `ffprobe -v error -show_entries format=duration -of csv=p=0 MY_FILM.mp4`). The
-`--master orchestral` preset hits −18 LUFS with no compression, preserving
-the dynamics so quiet beats stay quiet under dialogue.
-
-### 3. Mux dialogue + score together
-
-Two recipes — pick one:
-
-```bash
-# Dialogue-on-top, score underneath at 28% volume (recommended starting point)
-ffmpeg -i MY_FILM.mp4 -i my_film_score.flac \
-  -filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.28[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[a]" \
-  -map 0:v -map "[a]" \
-  -c:v copy -c:a aac -b:a 192k \
-  MY_FILM_with_score.mp4
-
-# Replace dialogue audio entirely (score becomes the only audio — for purely visual cuts)
-ffmpeg -i MY_FILM.mp4 -i my_film_score.flac \
-  -map 0:v -map 1:a -shortest \
-  -c:v copy -c:a aac -b:a 192k \
-  MY_FILM_score_only.mp4
-```
-
-For dialogue-heavy films, **0.28 is a good starting volume for the music**.
-Bump to 0.35 if the score feels too thin under the dialogue, drop to 0.20
-if speech intelligibility suffers.
-
-For more control (sidechain ducking — music drops automatically when
-dialogue is detected), use the `stitch` subcommand, which applies the same
-filter chain `aeon-radio-drama` uses:
-
-```bash
-python scripts/movie_maker_fast.py stitch clips_manifest.json \
-    --music my_film_score.flac \
-    --music-volume 0.28 \
-    -o MY_FILM_with_score.mp4
-```
-
-### Validated example
-
-`examples/the_strangers_tea.json` is the production-tested medina screenplay
-(52s, 6 prompt-relay sequences, dialogue + character descriptions +
-no-music negative). End-to-end: ~7 min render + ~1 min music gen + a
-single ffmpeg mux = a finished cinematic short with composed score.
+`examples/the_strangers_tea.json` is a complete production-validated
+reference: 52s medina short, 6 sequences, dialogue + lipsync + no-music
+negative + custom score. End-to-end: ~7 min render + ~1 min music gen +
+5 sec mux.
 
 ## Companion repos
 
