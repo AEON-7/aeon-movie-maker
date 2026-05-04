@@ -71,15 +71,30 @@ python scripts/movie_maker_fast.py clip \
 
 Add `--seed-image <jpg>` for I2V continuity, `--audio-reference <wav>` for A2V (forces `quality` mode), `--persistence 0.0–1.0` to control how strictly the seed image constrains the output.
 
+### Prompt Relay clip (timeline of prompts → one continuous joint A/V shot)
+
+```bash
+python scripts/movie_maker_fast.py clip --relay timeline.json --output shot.mp4
+```
+
+Use when: the user wants smooth morphing through multiple prompts inside a single continuous shot (montage, dialogue between same characters, beat sequence within one scene). Generates joint A/V by default — model produces audio in the same forward pass.
+
+`timeline.json`: `{wrapper, fps, width, height, segments:[{prompt, duration_s, ...}]}`. Frame budget per pass ≤ 489 on Spark — for longer films use `screenplay --use-relay`.
+
 ### Screenplay (multi-shot film)
 
 ```bash
 python scripts/movie_maker_fast.py screenplay <screenplay>.json
+
+# OR for smoother motion + joint A/V via Prompt Relay sequences:
+python scripts/movie_maker_fast.py screenplay <screenplay>.json --use-relay
 ```
 
 Schema in `SKILL.md` § Screenplay format. Outputs:
-- `output/movie_fast/<project>/<scene_id>.mp4` per scene
-- `output/movie_fast/<project>/clips_manifest.json` for the stitcher
+- Default: `output/movie_fast/<project>/<scene_id>.mp4` per scene + `clips_manifest.json`
+- With `--use-relay`: `output/movie_fast/<project>/sequence_<NNN>_seed*.mp4` per sequence (joint A/V) + `relay_manifest.json`
+
+`--use-relay` auto-chunks consecutive scenes into Prompt Relay sequences (≤ `--relay-max-frames` per pass; default 489). Scenes with `relay_break: true` or tags `{transition, cut, scene_change}` force a new sequence. Hard cuts between sequences carry the previous sequence's last frame as the next sequence's seed image (uploaded via ComfyUI's `/upload/image` — no shared filesystem needed). Joint A/V by default; `--relay-no-audio` for video-only.
 
 ### Stitch (final mux)
 

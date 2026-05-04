@@ -99,6 +99,70 @@ The screenplay command automatically:
 - Applies the per-character seed offset for visual identity
 - Writes a `clips_manifest.json` mapping scene IDs to clip files (used by `stitch`)
 
+### `clip --relay <timeline.json>` — Prompt Relay (one continuous shot)
+
+Render ONE LTX 2.3 forward pass that morphs smoothly through a timeline of
+prompts — vs the standard `clip` that renders a single static prompt. Powered
+by the `PromptRelayEncodeTimeline` custom node from `comfyui-aeon-spark`'s
+ComfyUI-PromptRelay pack. Output is **joint A/V** (model generates audio in
+the same pass — no separate stitch step needed for the relay portion).
+
+Best for: continuous-shot scenes, dialogue between same characters, montages,
+single-scene narrative beats with internal motion.
+
+```bash
+python scripts/movie_maker_fast.py clip \
+    --prompt "ignored when --relay is set" \
+    --relay timeline.json \
+    --output forest.mp4
+```
+
+`timeline.json` schema:
+
+```json
+{
+  "wrapper": "A continuous cinematic shot of two friends in a misty forest at dawn",
+  "seed_image": "characters/ana_ben_anchor.png",
+  "fps": 24, "width": 640, "height": 640,
+  "segments": [
+    {"prompt": "Ana points at something off-camera, surprised", "duration_s": 5},
+    {"prompt": "Ben turns to follow her gaze, then smiles", "duration_s": 5},
+    {"prompt": "They both walk forward into a clearing", "duration_s": 6}
+  ]
+}
+```
+
+Constraints:
+- **Frame budget per pass**: ≤ 489 frames @ 640×640 on Spark (~20s @ 24fps).
+  Longer films need multiple sequences — see `screenplay --use-relay` below.
+- **Single seed image** for the whole pass. Character/location changes within
+  a sequence morph from that anchor; for hard cuts, use a separate sequence.
+- Set `--relay-no-audio` for video-only output, `--relay-use-lora` to apply
+  the distill-1.1 LoRA on top.
+
+### `screenplay --use-relay` — Prompt Relay screenplay flow
+
+Auto-chunks a screenplay into Prompt Relay sequences and renders each as ONE
+joint A/V pass. Within a sequence: smooth morphing between scenes. Between
+sequences: hard cut, with the previous sequence's last frame uploaded to
+ComfyUI as the next sequence's seed image.
+
+```bash
+python scripts/movie_maker_fast.py screenplay screenplay.json \
+    --use-relay \
+    --output-dir output/movie_fast/my_film
+```
+
+Auto-chunking rules:
+1. Frame budget: a sequence's total stays ≤ `--relay-max-frames` (default 489).
+   When the next scene would overflow, finalize the sequence + start a new one.
+2. Explicit break: a scene with `relay_break: true` or any of the tags
+   `{transition, cut, scene_change}` forces a new sequence.
+
+Outputs `relay_manifest.json` listing each sequence with its scene indices,
+seed, frame count, and output mp4 path. Joint A/V by default — `--relay-no-audio`
+to drop audio per sequence.
+
 ### `stitch` — final mux with audio
 
 Take the rendered clips + a dialogue master + music bed + SFX layer and produce a finished film. The mix uses the same sidechain-ducked filter chain as `aeon-radio-drama`:

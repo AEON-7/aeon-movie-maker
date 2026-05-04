@@ -41,7 +41,7 @@ Models (canonical comfyui-aeon-spark asset layout — see download_models.py for
   Union LoRA:     models/loras/ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors
   VBVR LoRA:      models/loras/ltx2/Ltx2.3-Licon-VBVR-I2V-96000-R32.safetensors
 """
-import argparse, json, os, random, shutil, subprocess, sys, time
+import argparse, json, os, random, shutil, subprocess, sys, tempfile, time
 import urllib.request, urllib.error, urllib.parse
 
 try:
@@ -253,6 +253,54 @@ def comfy_fetch_view(filename, subfolder="", file_type="output", timeout=120):
     url = f"{COMFYUI_URL}/view?{qs}"
     with urllib.request.urlopen(url, timeout=timeout) as r:
         return r.read()
+
+
+def comfy_upload_image(local_path, target_subfolder="_movie_fast_frames",
+                       overwrite=True, timeout=60):
+    """Upload a local image to ComfyUI's input/ via /upload/image.
+
+    Returns the filename ComfyUI assigned (suitable for LoadImage's `image`
+    field). Eliminates the COMFYUI_ROOT-detection problem when the script
+    runs anywhere ComfyUI's filesystem isn't directly visible (separate host,
+    container without bind mount, etc.).
+
+    Returns the relative path that LoadImage expects: 'subfolder/filename.png'
+    when a subfolder is set, or just 'filename.png' for the input root.
+    """
+    fn = os.path.basename(local_path)
+    with open(local_path, "rb") as f:
+        body = f.read()
+    boundary = "----movieFastBoundary" + str(int(time.time() * 1000))
+
+    def _part(name, value, content_type=None, filename=None):
+        h = f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+        if filename is not None:
+            h += f'; filename="{filename}"'
+        h += "\r\n"
+        if content_type:
+            h += f"Content-Type: {content_type}\r\n"
+        h += "\r\n"
+        return h.encode("utf-8") + (value if isinstance(value, bytes) else str(value).encode("utf-8")) + b"\r\n"
+
+    payload = b""
+    payload += _part("image", body, content_type="image/png", filename=fn)
+    payload += _part("type", "input")
+    payload += _part("subfolder", target_subfolder)
+    payload += _part("overwrite", "true" if overwrite else "false")
+    payload += f"--{boundary}--\r\n".encode("utf-8")
+
+    req = urllib.request.Request(
+        f"{COMFYUI_URL}/upload/image",
+        data=payload,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        resp = json.loads(r.read())
+    # Response shape: {"name": "<saved_fn>", "subfolder": "<sf>", "type": "input"}
+    saved_name = resp.get("name", fn)
+    saved_sub  = resp.get("subfolder", target_subfolder)
+    return f"{saved_sub}/{saved_name}" if saved_sub else saved_name
 
 
 SUBMIT_RETRY_DELAYS_S = (2, 5, 10)
@@ -619,6 +667,375 @@ def build_ltx_i2v_workflow(
 
 
 # ============================================================================
+# Phase 1b — LTX 2.3 Prompt Relay (timeline of prompts → continuous joint A/V)
+# ============================================================================
+#
+# Mirrors comfyui-aeon-spark workflow `10_ltx2.3_prompt_relay.json`. Builds a
+# single LTX 2.3 forward pass that morphs through a TIMELINE of prompts inside
+# one render — versus the sequential-clip approach in build_ltx_i2v_workflow
+# which renders each scene separately and stitches.
+#
+# Headline node: `PromptRelayEncodeTimeline` (custom node from the AEON-Spark
+# `ComfyUI-PromptRelay` pack). It takes a list of (prompt, length_in_frames)
+# segments + a global "wrapper" anchor prompt, and outputs ONE positive
+# conditioning that drives the model differently across the timeline.
+#
+# Why this matters for screenplay:
+#   - Smooth morphing between scenes within the same shot/sequence (vs hard
+#     cuts you'd get from stitching separate clips together).
+#   - One shared internal context across the whole timeline → motion and
+#     character consistency are model-native, not post-hoc.
+#   - Joint A/V output: same render produces the audio track via
+#     LTXVAudioVAEDecode + LTXVConcatAVLatent + LTXVSeparateAVLatent. Opens
+#     the door to actual lipsync (vs current stitch-time audio mux).
+#
+# Constraints:
+#   - Single seed image for the whole pass (LTXVImgToVideoInplaceKJ takes one
+#     image_1). Character/location changes within a sequence morph from that
+#     anchor — works for "same character, varied actions"; for hard cuts to a
+#     different scene, build a new sequence with a new seed image.
+#   - Frame budget per pass is bounded by VRAM. Validated default is 489 frames
+#     @ 640×640 = ~20s @ 24 fps on Spark (matches the canonical example
+#     workflow). For longer films, chunk into multiple sequences and stitch.
+#   - Different model body than build_ltx_i2v_workflow:
+#     * UNET: ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled (transformer-only fp8)
+#     * Optional LoRA: ltxv/ltx2/ltx-2.3-22b-distilled-lora-384-1.1 @ 0.5
+#       (bypassed in canonical example; expose as a flag, off by default)
+#     * DualCLIP: gemma_3_12B_it + ltx-2.3_text_projection_bf16 (loader type "ltxv")
+#     * Video VAE: LTX23_video_vae_bf16
+#     * Audio VAE: LTX23_audio_vae_bf16  (REQUIRED — joint A/V is structural here)
+#
+# Signal flow (API-format node IDs as strings):
+#   [100] UNETLoader → MODEL0
+#   [101] (opt) LoraLoaderModelOnly(MODEL0) → MODEL1
+#   [102] PathchSageAttentionKJ(MODEL1) → MODEL2
+#   [103] DualCLIPLoader → CLIP
+#   [104] VAELoader(video) → VIDEO_VAE
+#   [105] LTXVAudioVAELoader → AUDIO_VAE
+#
+#   [110] EmptyLTXVLatentVideo(w, h, total_frames, 1) → EMPTY_V_LATENT
+#   [111] LoadImage(seed_image) → IMAGE  (or skipped for T2V)
+#   [112] LTXVPreprocess(image, 30) → IMAGE_PRE
+#   [113] LTXVImgToVideoInplaceKJ(VIDEO_VAE, EMPTY_V_LATENT, IMAGE_PRE) → V_LATENT_W_IMG
+#   [114] LTXVEmptyLatentAudio(AUDIO_VAE, total_frames, 25) → A_LATENT
+#   [115] LTXVConcatAVLatent(V_LATENT_W_IMG, A_LATENT) → AV_LATENT
+#
+#   [120] PromptRelayEncodeTimeline(MODEL2, CLIP, EMPTY_V_LATENT, total_frames,
+#                                   wrapper, segments_json, ...) → MODEL3, POS
+#   [121] ConditioningZeroOut(POS) → NEG
+#   [122] LTXVConditioning(POS, NEG, fps) → POS_LTX, NEG_LTX
+#
+#   [130] KSamplerSelect(euler_ancestral) → SAMPLER
+#   [131] BasicScheduler(MODEL3, linear_quadratic, steps, 1.0) → SIGMAS
+#   [132] SamplerCustom(MODEL3, POS_LTX, NEG_LTX, SAMPLER, SIGMAS, AV_LATENT,
+#                       add_noise=True, seed, control_after_generate, cfg=1)
+#                       → AV_SAMPLED
+#
+#   [140] LTXVSeparateAVLatent(AV_SAMPLED) → V_LATENT, A_LATENT
+#   [141] VAEDecode(V_LATENT, VIDEO_VAE) → IMAGES
+#   [142] LTXVAudioVAEDecode(A_LATENT, AUDIO_VAE) → AUDIO
+#   [143] VHS_VideoCombine(IMAGES, fps, AUDIO) → file on disk
+
+PROMPT_RELAY_DEFAULTS = {
+    "unet":       "ltx-2.3-22b-distilled-1.1_transformer_only_fp8_scaled.safetensors",
+    "video_vae":  "LTX23_video_vae_bf16.safetensors",
+    "audio_vae":  "LTX23_audio_vae_bf16.safetensors",
+    "clip_a":     "gemma_3_12B_it.safetensors",
+    "clip_b":     "ltx-2.3_text_projection_bf16.safetensors",
+    "clip_type":  "ltxv",
+    "lora":       f"ltxv{_SEP}ltx2{_SEP}ltx-2.3-22b-distilled-lora-384-1.1.safetensors",
+}
+
+# Hard ceiling per single Prompt Relay forward pass on Spark.
+# The canonical example workflow uses 489 frames @ 640×640. Bumping this
+# requires a re-validation pass — too high will OOM or produce visible
+# degradation past the model's effective receptive field.
+MAX_RELAY_FRAMES = 489
+
+# ComfyUI cosmetic — segment colors for the timeline visualization in UI.
+# Cycles deterministically so re-renders of the same timeline look the same.
+_RELAY_SEGMENT_COLORS = [
+    "#4f8edc", "#e07b3a", "#5cb464", "#c5599e",
+    "#d4af37", "#7a5cc8", "#3aaab8", "#d96360",
+]
+
+
+def _frames_from_duration(duration_s, fps):
+    """LTX expects per-segment frame counts of (n*8 + 1). Compute closest valid
+    at or below the requested duration. Minimum 9 frames (~0.4s @ 24fps)."""
+    target = int(round(float(duration_s) * float(fps)))
+    return max(9, ((target - 1) // 8) * 8 + 1)
+
+
+def build_ltx_prompt_relay_workflow(
+    timeline,                    # list of {"prompt": str, "duration_s": float, "color"?: str}
+    *,
+    wrapper_prompt,              # global anchor prompt (e.g. screenplay style + setting)
+    seed_image_path=None,        # filename relative to ComfyUI's input/ dir; None → T2V w/ blank latent
+    fps=DEFAULT_FPS,
+    width=640, height=640,       # Prompt Relay is square-friendly; 832×480 also tested
+    steps=8, cfg=1.0,            # canonical example uses 8 steps + CFG 1 (sampler add_noise=True)
+    seed=None,
+    sampler_name="euler_ancestral",
+    scheduler_name="linear_quadratic",
+    use_lora=False,              # canonical example bypasses the distill-1.1 LoRA; opt-in
+    lora_strength=0.5,
+    sage_attention=True,
+    save_audio=True,             # if False, drop audio from VHS_VideoCombine output
+    filename_prefix=None,
+    models=None,                 # override any of PROMPT_RELAY_DEFAULTS
+):
+    """Assemble the LTX 2.3 Prompt Relay workflow as a ComfyUI API-format dict.
+
+    Returns: (wf_dict, seed_used, total_frames)
+
+    `timeline` is a list of dicts with `prompt` (str) and `duration_s` (float).
+    Each dict may optionally carry a `color` (hex string for UI) and a
+    `frames` int (overrides duration_s — useful when caller wants exact frame
+    alignment).
+
+    Total frame count = sum of per-segment frames. Refuses if total > MAX_RELAY_FRAMES.
+    """
+    if not timeline:
+        raise ValueError("Prompt Relay requires at least one segment in timeline")
+
+    models = {**PROMPT_RELAY_DEFAULTS, **(models or {})}
+
+    if seed is None:
+        seed = random.randint(0, 2**31 - 1)
+
+    # Compute per-segment frame counts + total
+    segments_for_node = []
+    seg_lengths = []
+    for i, seg in enumerate(timeline):
+        if "prompt" not in seg or not seg["prompt"]:
+            raise ValueError(f"timeline[{i}] missing 'prompt'")
+        if "frames" in seg:
+            n_frames = max(9, int(seg["frames"]))
+        elif "duration_s" in seg:
+            n_frames = _frames_from_duration(seg["duration_s"], fps)
+        else:
+            raise ValueError(f"timeline[{i}] needs 'duration_s' or 'frames'")
+        seg_lengths.append(n_frames)
+        segments_for_node.append({
+            "prompt": seg["prompt"],
+            "length": n_frames,
+            "color":  seg.get("color") or _RELAY_SEGMENT_COLORS[i % len(_RELAY_SEGMENT_COLORS)],
+        })
+
+    total_frames = sum(seg_lengths)
+    if total_frames > MAX_RELAY_FRAMES:
+        raise ValueError(
+            f"Prompt Relay timeline totals {total_frames} frames; max per pass "
+            f"is {MAX_RELAY_FRAMES}. Split into multiple sequences."
+        )
+
+    if filename_prefix is None:
+        filename_prefix = f"movie_fast/relay_{seed}"
+
+    # Build the structured + legacy-pipe formats that PromptRelayEncodeTimeline
+    # accepts. The node honors widget[2] (JSON segments) primarily; widget[3]
+    # (pipe-separated) and widget[4] (frame-count CSV) are kept for
+    # backward-compat with older versions of the custom node.
+    segments_json   = json.dumps({"segments": segments_for_node}, ensure_ascii=False)
+    pipe_prompts    = " | ".join(s["prompt"] for s in segments_for_node)
+    pipe_frame_csv  = ", ".join(str(n) for n in seg_lengths)
+
+    wf = {
+        # ── Model + encoders ───────────────────────────────────────────────
+        "100": {"class_type": "UNETLoader",
+                "inputs": {
+                    "unet_name": models["unet"],
+                    "weight_dtype": "default",
+                }},
+        "103": {"class_type": "DualCLIPLoader",
+                "inputs": {
+                    "clip_name1": models["clip_a"],
+                    "clip_name2": models["clip_b"],
+                    "type": models["clip_type"],
+                    "device": "default",
+                }},
+        # VAELoaderKJ (KJ-namespace) loads a standalone .safetensors VAE
+        # rather than extracting from a checkpoint. This is what the canonical
+        # prompt-relay workflow uses for both video and audio VAEs — they're
+        # required because the transformer-only UNet (`*_transformer_only_fp8_scaled`)
+        # has neither VAE baked in. Plain VAELoader would fail with the wrong
+        # internal shape on the audio side.
+        "104": {"class_type": "VAELoaderKJ",
+                "inputs": {"vae_name": models["video_vae"],
+                           "device": "main_device", "weight_dtype": "bf16"}},
+        "105": {"class_type": "VAELoaderKJ",
+                "inputs": {"vae_name": models["audio_vae"],
+                           "device": "main_device", "weight_dtype": "bf16"}},
+    }
+
+    # Optional LoRA (off by default — canonical workflow bypasses it)
+    if use_lora:
+        wf["101"] = {"class_type": "LoraLoaderModelOnly",
+                     "inputs": {
+                         "model": ["100", 0],
+                         "lora_name": models["lora"],
+                         "strength_model": float(lora_strength),
+                     }}
+        model_after_lora = "101"
+    else:
+        model_after_lora = "100"
+
+    # Optional Sage Attention patch (canonical workflow has it on).
+    # Input names per ComfyUI object_info: model + sage_attention (enum).
+    # `allow_compile` is optional (default False); leaving unset.
+    if sage_attention:
+        wf["102"] = {"class_type": "PathchSageAttentionKJ",
+                     "inputs": {
+                         "model": [model_after_lora, 0],
+                         "sage_attention": "auto",
+                     }}
+        model_for_relay = "102"
+    else:
+        model_for_relay = model_after_lora
+
+    # ── Latent prep (video + audio + concat) ───────────────────────────────
+    wf["110"] = {"class_type": "EmptyLTXVLatentVideo",
+                 "inputs": {
+                     "width": int(width), "height": int(height),
+                     "length": int(total_frames), "batch_size": 1,
+                 }}
+
+    if seed_image_path:
+        wf["111"] = {"class_type": "LoadImage",
+                     "inputs": {"image": seed_image_path}}
+        # LTXVPreprocess input is `img_compression` (INT, default 35)
+        wf["112"] = {"class_type": "LTXVPreprocess",
+                     "inputs": {"image": ["111", 0], "img_compression": 30}}
+        # LTXVImgToVideoInplaceKJ uses a dynamic combo for `num_images` — when
+        # set to "1", the node materializes additional inputs that ComfyUI
+        # references with a DOT-NAMESPACED prefix: `num_images.strength_1`,
+        # `num_images.image_1`, `num_images.index_1`. (Visible in the validator's
+        # `extra_info.input_name` field on rejection.) Sending bare `strength_1`
+        # etc. fails with "Required input is missing: strength_1" even though
+        # the value IS in the payload — the validator looks up the namespaced key.
+        wf["113"] = {"class_type": "LTXVImgToVideoInplaceKJ",
+                     "inputs": {
+                         "vae": ["104", 0],
+                         "latent": ["110", 0],
+                         "num_images": "1",
+                         "num_images.strength_1": 1.0,
+                         "num_images.image_1": ["112", 0],
+                         "num_images.index_1": 0,
+                     }}
+        video_latent_for_concat = ["113", 0]
+    else:
+        # T2V: skip image conditioning, feed empty latent straight into the concat
+        video_latent_for_concat = ["110", 0]
+
+    wf["114"] = {"class_type": "LTXVEmptyLatentAudio",
+                 "inputs": {
+                     "frames_number": int(total_frames),
+                     "frame_rate": 25,  # audio frame rate fixed to LTX's 25 Hz codec
+                     "batch_size": 1,
+                     "audio_vae": ["105", 0],
+                 }}
+    wf["115"] = {"class_type": "LTXVConcatAVLatent",
+                 "inputs": {
+                     "video_latent": video_latent_for_concat,
+                     "audio_latent": ["114", 0],
+                 }}
+
+    # ── Prompt Relay timeline encoding ─────────────────────────────────────
+    # Per ComfyUI object_info, the actual input names are:
+    #   global_prompt    — wrapper anchor
+    #   max_frames       — total timeline length
+    #   timeline_data    — JSON state of the timeline editor (auto-managed)
+    #   local_prompts    — pipe-separated per-segment prompts (UI-populated)
+    #   segment_lengths  — comma-separated frame counts (UI-populated)
+    #   epsilon          — smoothing/penalty decay (low = sharp boundaries)
+    #   fps (optional)   — display-only; doesn't change generation
+    wf["120"] = {"class_type": "PromptRelayEncodeTimeline",
+                 "inputs": {
+                     "model": [model_for_relay, 0],
+                     "clip": ["103", 0],
+                     "latent": ["110", 0],
+                     "global_prompt": wrapper_prompt,
+                     "max_frames": int(total_frames),
+                     "timeline_data": segments_json,
+                     "local_prompts": pipe_prompts,
+                     "segment_lengths": pipe_frame_csv,
+                     "epsilon": 0.001,
+                     "fps": float(fps),
+                     "time_units": "frames",
+                 }}
+
+    # ConditioningZeroOut on the positive gives a true-zero negative conditioning
+    # (canonical example does this rather than encoding a separate negative prompt
+    # — matches the model's training distribution at CFG≈1).
+    wf["121"] = {"class_type": "ConditioningZeroOut",
+                 "inputs": {"conditioning": ["120", 1]}}
+    wf["122"] = {"class_type": "LTXVConditioning",
+                 "inputs": {
+                     "positive": ["120", 1],
+                     "negative": ["121", 0],
+                     "frame_rate": float(fps),
+                 }}
+
+    # ── Sampler stack ──────────────────────────────────────────────────────
+    wf["130"] = {"class_type": "KSamplerSelect",
+                 "inputs": {"sampler_name": sampler_name}}
+    wf["131"] = {"class_type": "BasicScheduler",
+                 "inputs": {
+                     "model": ["120", 0],   # use the relay-wrapped model for sigma calc
+                     "scheduler": scheduler_name,
+                     "steps": int(steps),
+                     "denoise": 1.0,
+                 }}
+    # Note SamplerCustom (NOT SamplerCustomAdvanced) — matches canonical workflow.
+    # `add_noise=True` + cfg=1 + low steps is the prompt-relay tuning recipe.
+    wf["132"] = {"class_type": "SamplerCustom",
+                 "inputs": {
+                     "model": ["120", 0],
+                     "positive": ["122", 0],
+                     "negative": ["122", 1],
+                     "sampler": ["130", 0],
+                     "sigmas": ["131", 0],
+                     "latent_image": ["115", 0],
+                     "add_noise": True,
+                     "noise_seed": int(seed),
+                     "cfg": float(cfg),
+                 }}
+
+    # ── Decode + assemble ──────────────────────────────────────────────────
+    # LTXVSeparateAVLatent splits the joint AV latent back into video + audio.
+    # Per ComfyUI object_info: VAEDecode wants (samples, vae);
+    #                         LTXVAudioVAEDecode wants (samples, audio_vae).
+    wf["140"] = {"class_type": "LTXVSeparateAVLatent",
+                 "inputs": {"av_latent": ["132", 0]}}
+    wf["141"] = {"class_type": "VAEDecode",
+                 "inputs": {"samples": ["140", 0], "vae": ["104", 0]}}
+    if save_audio:
+        wf["142"] = {"class_type": "LTXVAudioVAEDecode",
+                     "inputs": {"samples": ["140", 1], "audio_vae": ["105", 0]}}
+
+    # VHS_VideoCombine — required inputs per object_info: images, frame_rate,
+    # loop_count, filename_prefix, format, pingpong, save_output.
+    # Optional: audio (mux), meta_batch, vae.
+    # Format must be one of the documented enums; "video/h264-mp4" is the
+    # canonical mp4-with-h264 pick.
+    combine_inputs = {
+        "images": ["141", 0],
+        "frame_rate": float(fps),
+        "loop_count": 0,
+        "filename_prefix": filename_prefix,
+        "format": "video/h264-mp4",
+        "pingpong": False,
+        "save_output": True,
+    }
+    if save_audio:
+        combine_inputs["audio"] = ["142", 0]
+    wf["143"] = {"class_type": "VHS_VideoCombine", "inputs": combine_inputs}
+
+    return wf, seed, total_frames
+
+
+# ============================================================================
 # Phase 2 — Screenplay driver
 # ============================================================================
 
@@ -884,6 +1301,347 @@ def render_scene(scene, scene_idx, project_dir, *,
         except Exception as e:
             print(f"      FAILED: {e}")
     return results
+
+
+def chunk_scenes_into_relay_sequences(scenes, fps, max_frames=MAX_RELAY_FRAMES):
+    """Group consecutive screenplay scenes into Prompt Relay sequences.
+
+    Each sequence becomes ONE Prompt Relay forward pass. Within a sequence,
+    scenes morph smoothly via the timeline. Between sequences, there's a hard
+    cut (visually — and the renderer carries the previous sequence's last
+    frame as the seed image for the next sequence's relay).
+
+    Chunking rules:
+      1. Frame budget: a sequence's total frame count must stay ≤ max_frames.
+         Adding the next scene that would exceed → finalize, start new.
+      2. Explicit break: a scene with `relay_break: true` or any of the tags
+         {'transition', 'cut', 'scene_change'} forces it to start a new sequence.
+      3. Image change: when consecutive scenes have different `source_image`,
+         we still keep them in the same sequence (the relay morphs through).
+         A hard cut requires explicit signal per rule 2 — otherwise the
+         smooth-morph property is what we WANT.
+
+    Returns: list of sequences, each {"scenes": [...], "scene_indices": [...],
+             "total_frames": int, "seed_image": str or None}.
+    """
+    BREAK_TAGS = {"transition", "cut", "scene_change"}
+    sequences = []
+    current = {"scenes": [], "scene_indices": [], "total_frames": 0, "seed_image": None}
+
+    def _finalize():
+        nonlocal current
+        if current["scenes"]:
+            sequences.append(current)
+        current = {"scenes": [], "scene_indices": [], "total_frames": 0, "seed_image": None}
+
+    for i, scene in enumerate(scenes):
+        # Compute this scene's LTX-aligned frame count
+        duration_s = float(scene.get("duration") or scene.get("duration_hint") or 4.0)
+        scene_frames = _frames_from_duration(duration_s, fps)
+
+        # If a single scene exceeds the relay frame budget, it can't fit.
+        # Finalize the current sequence and put this scene alone (it'll be
+        # truncated to max_frames at render time).
+        if scene_frames > max_frames:
+            _finalize()
+            sequences.append({
+                "scenes": [scene], "scene_indices": [i],
+                "total_frames": max_frames,
+                "seed_image": scene.get("source_image") or scene.get("image_path") or scene.get("image"),
+                "_truncated_from": scene_frames,
+            })
+            current = {"scenes": [], "scene_indices": [], "total_frames": 0, "seed_image": None}
+            continue
+
+        explicit_break = (
+            scene.get("relay_break") is True
+            or any(t in BREAK_TAGS for t in (scene.get("tags") or []))
+        )
+
+        # Need-to-break check
+        would_overflow = (current["total_frames"] + scene_frames) > max_frames
+        if explicit_break or would_overflow:
+            _finalize()
+
+        # If this is the first scene of a (possibly new) sequence, seed image
+        # comes from this scene
+        if not current["scenes"]:
+            current["seed_image"] = (
+                scene.get("source_image") or scene.get("image_path") or scene.get("image")
+            )
+
+        current["scenes"].append(scene)
+        current["scene_indices"].append(i)
+        current["total_frames"] += scene_frames
+
+    _finalize()
+    return sequences
+
+
+def _scene_to_relay_segment(scene, fps):
+    """Convert a screenplay scene into a Prompt Relay segment dict."""
+    duration_s = float(scene.get("duration") or scene.get("duration_hint") or 4.0)
+    # Prefer description (camera-facing) over action (motion-only); concatenate
+    # if both present for richest conditioning.
+    parts = []
+    for key in ("description", "action", "prompt"):
+        v = scene.get(key)
+        if v: parts.append(str(v).strip())
+    prompt = " — ".join(parts) if parts else "continuation of previous shot"
+    # Inject mood / camera / style as natural-language suffixes
+    for key in ("camera", "mood", "style"):
+        v = scene.get(key)
+        if v: prompt = f"{prompt}, {key}: {v}"
+    # Append dialogue if present (helps joint-A/V audio generation)
+    dialog = scene.get("dialogue") or []
+    if dialog:
+        lines = []
+        for d in dialog:
+            speaker = d.get("character", "?")
+            line = d.get("line", "")
+            if line:
+                lines.append(f'{speaker} says "{line}"')
+        if lines:
+            prompt = f"{prompt}. {' Then '.join(lines)}"
+    return {"prompt": prompt, "duration_s": duration_s}
+
+
+def _build_sequence_wrapper(screenplay, sequence):
+    """Compose the global anchor prompt for a Prompt Relay sequence.
+
+    Pulls screenplay-level style/setting + the union of characters appearing
+    in this sequence's scenes. Falls back to a generic cinematic anchor.
+    """
+    bits = []
+    if screenplay.get("title"):
+        bits.append(f'Film "{screenplay["title"]}"')
+    if screenplay.get("style"):
+        bits.append(f"style: {screenplay['style']}")
+    if screenplay.get("setting"):
+        bits.append(f"setting: {screenplay['setting']}")
+    chars = []
+    for sc in sequence["scenes"]:
+        for c in (sc.get("characters") or []):
+            if c not in chars:
+                chars.append(c)
+    if chars:
+        bits.append(f"characters: {', '.join(chars)}")
+    bits.append("a single continuous cinematic shot, smooth motion, consistent lighting")
+    return ". ".join(bits)
+
+
+def render_screenplay_relay(screenplay_path, output_dir=None, *,
+                            base_seed=None,
+                            width=640, height=640, fps=DEFAULT_FPS,
+                            steps=8, cfg=1.0,
+                            sampler_name="euler_ancestral",
+                            scheduler_name="linear_quadratic",
+                            use_lora=False, lora_strength=0.5,
+                            save_audio=True,
+                            carry_last_frame=True,
+                            max_frames=MAX_RELAY_FRAMES,
+                            limit=None):
+    """Drive a screenplay through the LTX 2.3 Prompt Relay pipeline.
+
+    For each Prompt Relay-friendly chunk of consecutive scenes ("sequence"),
+    builds ONE timeline workflow that morphs smoothly through the scene's
+    prompts. Hard cuts between sequences (carrying the previous sequence's
+    last frame as the seed image, same continuity strategy as the per-scene
+    flow uses across chunks of a single scene).
+
+    Tradeoffs vs render_screenplay():
+      + Smoother motion within a sequence (one shared model context)
+      + Joint A/V output with model-generated audio (no separate stitch step
+        needed for the relay portion)
+      - Bounded by VRAM: max ~489 frames per sequence on Spark
+      - Single seed image per sequence (best for "same character, varied
+        actions" not "now we're somewhere completely different")
+
+    Returns: a manifest dict listing sequences + per-sequence output mp4 paths.
+    """
+    with open(screenplay_path, encoding="utf-8") as f:
+        screenplay = json.load(f)
+
+    scenes = screenplay.get("scenes") or screenplay.get("shots") or []
+    if limit is not None:
+        scenes = scenes[:limit]
+
+    project_name = (screenplay.get("title")
+                    or os.path.splitext(os.path.basename(screenplay_path))[0])
+    project_name = "".join(c if c.isalnum() or c in "_-" else "_" for c in project_name)[:60]
+    output_dir = output_dir or os.path.join(OUTPUT_ROOT, "movie_fast", project_name)
+    os.makedirs(output_dir, exist_ok=True)
+    comfy_prefix = f"movie_fast/{project_name}_relay"
+
+    if base_seed is None:
+        base_seed = random.randint(0, 2**31 - 1)
+
+    sequences = chunk_scenes_into_relay_sequences(scenes, fps, max_frames=max_frames)
+
+    print(f"=== Movie Maker Fast — Screenplay Run (Prompt Relay) ===")
+    print(f"  screenplay:  {screenplay_path}")
+    print(f"  project:     {project_name}")
+    print(f"  scenes:      {len(scenes)}{' (limited)' if limit else ''}")
+    print(f"  → sequences: {len(sequences)} (auto-chunked at {max_frames}-frame budget)")
+    for i, seq in enumerate(sequences):
+        n_scenes = len(seq['scenes'])
+        truncated = '⚠ TRUNCATED' if seq.get('_truncated_from') else ''
+        print(f"    seq {i}: scenes [{seq['scene_indices'][0]}..{seq['scene_indices'][-1]}] "
+              f"({n_scenes} scene{'s' if n_scenes>1 else ''}, "
+              f"{seq['total_frames']} frames ≈ {seq['total_frames']/fps:.1f}s) {truncated}")
+    print(f"  dims/fps:    {width}x{height} @ {fps}fps")
+    print(f"  sampler:     {sampler_name} / {scheduler_name} / {steps} steps / CFG {cfg}")
+    print(f"  audio:       {'KEEP (joint A/V per sequence)' if save_audio else 'DROP (video-only)'}")
+    print(f"  base_seed:   {base_seed}")
+    print(f"  output:      {output_dir}")
+    print()
+
+    t0_all = time.time()
+    all_sequences_out = []
+    last_frame_image = None  # carry-forward across sequences
+
+    for seq_i, seq in enumerate(sequences):
+        seed = (base_seed + seq_i * 1000) & 0x7FFFFFFF
+        # Seed image precedence: explicit scene image > previous sequence's last frame
+        seed_image = seq["seed_image"] or last_frame_image
+
+        timeline = [_scene_to_relay_segment(sc, fps) for sc in seq["scenes"]]
+        wrapper = _build_sequence_wrapper(screenplay, seq)
+        seq_prefix = f"{comfy_prefix}_seq{seq_i:03d}_seed{seed}"
+        out_path = os.path.join(output_dir, f"sequence_{seq_i:03d}_seed{seed}.mp4")
+
+        print(f"[SEQ {seq_i:03d}/{len(sequences)-1}] {len(seq['scenes'])} scene(s), "
+              f"{seq['total_frames']} frames, seed_image={seed_image or '(T2V)'}")
+        for j, scene in enumerate(seq["scenes"]):
+            desc = (scene.get('description') or scene.get('action') or '?')[:80]
+            print(f"  • scene {seq['scene_indices'][j]}: {desc}")
+
+        try:
+            wf, seed_used, total_frames = build_ltx_prompt_relay_workflow(
+                timeline=timeline,
+                wrapper_prompt=wrapper,
+                seed_image_path=seed_image,
+                fps=fps, width=width, height=height,
+                steps=steps, cfg=cfg, seed=seed,
+                sampler_name=sampler_name, scheduler_name=scheduler_name,
+                use_lora=use_lora, lora_strength=lora_strength,
+                sage_attention=True, save_audio=save_audio,
+                filename_prefix=seq_prefix,
+            )
+            t0 = time.time()
+            result, pid = submit_and_wait(wf, f"mmfast-relay-{seed_used}",
+                                          poll_timeout=2400)
+            elapsed = time.time() - t0
+            status = result.get("status", {}).get("status_str")
+            if status != "success":
+                print(f"  SEQ FAILED: {status}")
+                continue
+
+            # Locate output mp4 (FS first, /view fallback)
+            src = None
+            for v in result.get("outputs", {}).values():
+                for key in ("videos", "gifs", "images"):
+                    for a in v.get(key, []):
+                        if not isinstance(a, dict) or "filename" not in a:
+                            continue
+                        fn = a["filename"]
+                        if not fn.lower().endswith((".mp4", ".webm")):
+                            continue
+                        sub = a.get("subfolder", "")
+                        ftype = a.get("type", "output")
+                        p_cand = os.path.join(OUTPUT_ROOT, sub, fn)
+                        if os.path.exists(p_cand):
+                            src = p_cand; break
+                        try:
+                            blob = comfy_fetch_view(fn, sub, ftype)
+                            os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+                            with open(out_path, "wb") as f: f.write(blob)
+                            src = out_path; break
+                        except Exception as exc:
+                            print(f"  WARN: /view fallback failed: {exc}")
+                    if src: break
+                if src: break
+
+            if not src:
+                print(f"  SEQ FAILED: no output file found")
+                continue
+            if os.path.abspath(src) != out_path:
+                shutil.copy2(src, out_path)
+            size_mb = os.path.getsize(out_path) / 1024 / 1024
+            print(f"  ✓ {total_frames}f @ {fps}fps = {total_frames/fps:.1f}s in {elapsed:.0f}s "
+                  f"({size_mb:.2f} MB) → {out_path}")
+
+            # Carry-forward last frame for the next sequence's seed image.
+            # Extract locally with ffmpeg, then UPLOAD to ComfyUI via /upload/image.
+            # Upload-then-reference is more robust than writing to a guessed
+            # COMFYUI_ROOT/input/... path — it works regardless of whether the
+            # script runs in-container, on-host, or via SSH from a separate machine.
+            if carry_last_frame and seq_i < len(sequences) - 1:
+                # tempfile in OS temp dir — local-only, doesn't need ComfyUI's filesystem
+                tmp_dir = os.path.join(tempfile.gettempdir(), "movie_fast_carry")
+                os.makedirs(tmp_dir, exist_ok=True)
+                tmp_png = os.path.join(
+                    tmp_dir,
+                    f"{project_name}_seq{seq_i:03d}_lastframe.png",
+                )
+                try:
+                    _extract_last_frame(out_path, tmp_png)
+                    last_frame_image = comfy_upload_image(
+                        tmp_png,
+                        target_subfolder="_movie_fast_frames",
+                        overwrite=True,
+                    )
+                    print(f"  carry-forward: uploaded {os.path.basename(tmp_png)} → "
+                          f"ComfyUI input as '{last_frame_image}'")
+                except Exception as exc:
+                    print(f"  WARN: carry-forward failed: {exc}; next seq goes T2V")
+                    last_frame_image = None
+
+            all_sequences_out.append({
+                "sequence_idx": seq_i,
+                "scene_indices": seq["scene_indices"],
+                "n_scenes": len(seq["scenes"]),
+                "total_frames": total_frames,
+                "duration_s": round(total_frames / fps, 2),
+                "seed": seed_used,
+                "seed_image": seed_image,
+                "wrapper": wrapper,
+                "output_path": out_path,
+                "size_bytes": os.path.getsize(out_path),
+                "render_elapsed_s": round(elapsed, 1),
+                "joint_av": save_audio,
+            })
+        except Exception as e:
+            print(f"  SEQ FAILED: {e}")
+
+    elapsed_all = time.time() - t0_all
+    manifest = {
+        "project_name": project_name,
+        "mode": "prompt_relay",
+        "width": width, "height": height, "fps": fps,
+        "steps": steps, "cfg": cfg, "sampler": sampler_name,
+        "scheduler": scheduler_name,
+        "save_audio": save_audio,
+        "max_relay_frames": max_frames,
+        "use_lora": use_lora, "lora_strength": lora_strength,
+        "base_seed": base_seed,
+        "carry_last_frame": carry_last_frame,
+        "n_scenes_input": len(scenes),
+        "n_sequences_rendered": len(all_sequences_out),
+        "total_elapsed_s": round(elapsed_all, 1),
+        "sequences": all_sequences_out,
+    }
+    manifest_path = os.path.join(output_dir, "relay_manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"\n=== Screenplay Relay Complete ===")
+    print(f"  sequences: {len(all_sequences_out)} / {len(sequences)}")
+    print(f"  total:     {sum(s['total_frames'] for s in all_sequences_out)} frames "
+          f"= {sum(s['duration_s'] for s in all_sequences_out):.1f}s of footage")
+    print(f"  elapsed:   {elapsed_all:.0f}s ({elapsed_all/60:.1f} min)")
+    print(f"  manifest:  {manifest_path}")
+    return manifest
 
 
 def render_screenplay(screenplay_path, output_dir=None, *,
@@ -1236,6 +1994,28 @@ def main():
              "output is over-stylized; raise toward 1.0 for stronger composition control.")
     pc.add_argument("--output", "-o", default=None,
         help="Output mp4 path (default: output/movie_fast/<slug>_<seed>.mp4)")
+    # ── Phase 1b: Prompt Relay ────────────────────────────────────────────
+    pc.add_argument("--relay", default=None, metavar="TIMELINE.JSON",
+        help="Render via LTX 2.3 Prompt Relay (timeline of prompts → ONE continuous "
+             "joint A/V pass with smooth morphing between segments). Takes a JSON file "
+             "with a 'segments' list (per-segment 'prompt' + 'duration_s' or 'frames'), "
+             "an optional 'wrapper' anchor prompt, an optional 'seed_image', plus the "
+             "usual fps/width/height. When --relay is set, --image / --t2v / --prompt / "
+             "--mode / per-tool LoRA flags are IGNORED — the relay builder uses its own "
+             "model body and conditioning path. Total frames must be ≤ MAX_RELAY_FRAMES "
+             "(489 by default); split longer films into multiple sequences.")
+    pc.add_argument("--relay-wrapper", default=None,
+        help="Override wrapper anchor prompt (else taken from timeline.json's 'wrapper' field, "
+             "else built from the first segment's prompt).")
+    pc.add_argument("--relay-no-audio", dest="relay_save_audio",
+        action="store_false", default=True,
+        help="Drop the audio track from the relay output (video-only mp4). "
+             "Default: keep the model-generated joint A/V audio.")
+    pc.add_argument("--relay-use-lora", action="store_true",
+        help="Apply the distill-1.1 LoRA on top of the relay UNet. Off by default — "
+             "the canonical example workflow has it bypassed.")
+    pc.add_argument("--relay-lora-strength", type=float, default=0.5,
+        help="Distill-1.1 LoRA strength when --relay-use-lora is set. Default 0.5.")
 
     # Subcommand: screenplay  — drive a full screenplay JSON
     ps = sub.add_parser("screenplay", help="Render all scenes from a screenplay JSON")
@@ -1263,6 +2043,29 @@ def main():
         action="store_false", default=True,
         help="Disable last-frame carry-forward between chunks of a scene. "
              "Default ON: chunk N+1 starts from chunk N's last frame for visual continuity.")
+    # ── Phase 2: Prompt Relay screenplay path ─────────────────────────────
+    ps.add_argument("--use-relay", action="store_true",
+        help="Render the screenplay via LTX 2.3 Prompt Relay sequences instead of the "
+             "per-scene I2V flow. Auto-chunks consecutive scenes into Prompt Relay "
+             "sequences (each ≤ MAX_RELAY_FRAMES = %d frames on Spark) so each "
+             "sequence becomes ONE forward pass with smooth morphing through its "
+             "scenes. Hard cuts between sequences carry-forward the previous "
+             "sequence's last frame as seed image. Output is JOINT A/V — model "
+             "generates audio simultaneously with video. Per-scene scenes can opt "
+             "into starting a new sequence by setting `relay_break: true` or any of "
+             "the tags {'transition', 'cut', 'scene_change'}." % MAX_RELAY_FRAMES)
+    ps.add_argument("--relay-no-audio", dest="relay_save_audio",
+        action="store_false", default=True,
+        help="With --use-relay: drop the audio track from each sequence. Default "
+             "keeps the model-generated joint A/V audio.")
+    ps.add_argument("--relay-use-lora", action="store_true",
+        help="With --use-relay: apply distill-1.1 LoRA on top of the relay UNet "
+             "(off by default — canonical workflow bypasses it).")
+    ps.add_argument("--relay-lora-strength", type=float, default=0.5,
+        help="With --use-relay --relay-use-lora: LoRA strength (default 0.5).")
+    ps.add_argument("--relay-max-frames", type=int, default=MAX_RELAY_FRAMES,
+        help=f"With --use-relay: max frames per single Prompt Relay pass "
+             f"(default {MAX_RELAY_FRAMES} — validated ceiling on Spark).")
 
     # Subcommand: stitch  — concat clips from manifest + optional audio
     pst = sub.add_parser("stitch", help="Concatenate clips from a manifest with optional audio mux")
@@ -1291,14 +2094,45 @@ def main():
     apply_cli_lora_overrides(args)
 
     if args.cmd == "screenplay":
-        render_screenplay(
-            args.screenplay_path, output_dir=args.output_dir,
-            mode=args.mode, base_seed=args.seed,
-            width=args.width, height=args.height, fps=args.fps,
-            steps=args.steps, cfg=args.cfg, limit=args.limit,
-            persistence=args.persistence, sampler_name=args.sampler,
-            carry_last_frame=args.carry_last_frame,
-        )
+        if getattr(args, "use_relay", False):
+            # Phase 2: Prompt Relay-driven screenplay. Each Prompt Relay
+            # sequence does smooth multi-prompt morphing within its frame
+            # budget; hard cuts between sequences carry the previous
+            # sequence's last frame as seed image. Joint A/V output by
+            # default (model generates audio with video).
+            #
+            # Prompt Relay uses different sampler defaults (8 steps, CFG 1.0,
+            # euler_ancestral / linear_quadratic) than the per-scene I2V flow.
+            # Honor user-provided overrides if explicitly set; otherwise use
+            # the relay-tuned defaults rather than the I2V path's defaults.
+            relay_steps = args.steps if args.steps != DEFAULT_STEPS else 8
+            relay_cfg   = args.cfg   if args.cfg   != DEFAULT_CFG else 1.0
+            relay_sampler = args.sampler if args.sampler != "euler" else "euler_ancestral"
+            # Relay also uses square dims by convention; only override the
+            # I2V-flow defaults when the user explicitly bumped them.
+            relay_w = args.width  if args.width  != DEFAULT_WIDTH  else 640
+            relay_h = args.height if args.height != DEFAULT_HEIGHT else 640
+            render_screenplay_relay(
+                args.screenplay_path, output_dir=args.output_dir,
+                base_seed=args.seed,
+                width=relay_w, height=relay_h, fps=args.fps,
+                steps=relay_steps, cfg=relay_cfg, limit=args.limit,
+                sampler_name=relay_sampler,
+                use_lora=args.relay_use_lora,
+                lora_strength=args.relay_lora_strength,
+                save_audio=args.relay_save_audio,
+                carry_last_frame=args.carry_last_frame,
+                max_frames=args.relay_max_frames,
+            )
+        else:
+            render_screenplay(
+                args.screenplay_path, output_dir=args.output_dir,
+                mode=args.mode, base_seed=args.seed,
+                width=args.width, height=args.height, fps=args.fps,
+                steps=args.steps, cfg=args.cfg, limit=args.limit,
+                persistence=args.persistence, sampler_name=args.sampler,
+                carry_last_frame=args.carry_last_frame,
+            )
         return
 
     if args.cmd == "stitch":
@@ -1342,56 +2176,125 @@ def main():
         internal_prefix = f"movie_fast/{slug}_{seed}"
         out_path = os.path.join(OUTPUT_ROOT, "movie_fast", f"{slug}_{seed}.mp4")
 
-    if not args.t2v and not args.image:
-        raise SystemExit("`clip` requires --image (or use --t2v for text-to-video mode)")
+    # ── Phase 1b: Prompt Relay path ────────────────────────────────────────
+    # When --relay is set, build the multi-segment timeline workflow instead
+    # of the standard single-prompt I2V/T2V workflow. The two paths are
+    # mutually exclusive — --relay's own timeline supplies all per-segment
+    # prompts/durations, so --prompt / --duration / --image / --t2v / --mode
+    # / per-tool LoRA flags become irrelevant here.
+    if getattr(args, "relay", None):
+        if not os.path.isfile(args.relay):
+            raise SystemExit(f"--relay file not found: {args.relay}")
+        with open(args.relay) as f:
+            tl_doc = json.load(f)
+        segs = tl_doc.get("segments")
+        if not segs:
+            raise SystemExit(f"--relay JSON missing 'segments' list: {args.relay}")
+        wrapper = (args.relay_wrapper
+                   or tl_doc.get("wrapper")
+                   or tl_doc.get("wrapper_prompt")
+                   or f"A continuous cinematic shot. {segs[0]['prompt']}")
+        # Per-timeline overrides fall back to top-level CLI defaults
+        relay_fps    = int(tl_doc.get("fps", args.fps))
+        relay_width  = int(tl_doc.get("width",  640))   # square by default for prompt-relay
+        relay_height = int(tl_doc.get("height", 640))
+        relay_steps  = int(tl_doc.get("steps",  8))     # canonical example tuning
+        relay_cfg    = float(tl_doc.get("cfg",  1.0))
+        relay_seed_image = tl_doc.get("seed_image") or tl_doc.get("image")
 
-    wf, seed_used = build_ltx_i2v_workflow(
-        image_path=args.image or "",  # ignored when t2v=True
-        prompt=args.prompt, negative_prompt=args.negative,
-        duration_s=args.duration, fps=args.fps,
-        width=args.width, height=args.height,
-        steps=steps, cfg=cfg, seed=seed,
-        loras=loras, mode=args.mode, filename_prefix=internal_prefix,
-        persistence=args.persistence, sampler_name=sampler,
-        t2v=args.t2v,
-        audio_reference=args.audio_reference,
-        audio_guidance_scale=args.audio_guidance,
-        audio_start_percent=args.audio_start_pct,
-        audio_end_percent=args.audio_end_pct,
-    )
+        wf, seed_used, total_frames = build_ltx_prompt_relay_workflow(
+            timeline=segs,
+            wrapper_prompt=wrapper,
+            seed_image_path=relay_seed_image,
+            fps=relay_fps,
+            width=relay_width, height=relay_height,
+            steps=relay_steps, cfg=relay_cfg, seed=seed,
+            sampler_name=tl_doc.get("sampler", "euler_ancestral"),
+            scheduler_name=tl_doc.get("scheduler", "linear_quadratic"),
+            use_lora=args.relay_use_lora,
+            lora_strength=args.relay_lora_strength,
+            sage_attention=True,
+            save_audio=args.relay_save_audio,
+            filename_prefix=internal_prefix,
+        )
+        print("=== Movie Maker Fast — Prompt Relay ===")
+        print(f"  Wrapper:    {wrapper[:100]}{'...' if len(wrapper) > 100 else ''}")
+        print(f"  Segments:   {len(segs)}")
+        for i, s in enumerate(segs):
+            est_f = s.get("frames") or _frames_from_duration(s.get("duration_s", 4.0), relay_fps)
+            print(f"    [{i}] {est_f:>3} frames  {s['prompt'][:80]}")
+        print(f"  Seed image: {relay_seed_image or '(T2V — blank latent)'}")
+        print(f"  Dims:       {relay_width}×{relay_height} @ {relay_fps} fps")
+        print(f"  Total:      {total_frames} frames "
+              f"(~{total_frames / relay_fps:.1f}s)  [budget {MAX_RELAY_FRAMES}]")
+        print(f"  Sampler:    {tl_doc.get('sampler', 'euler_ancestral')} / "
+              f"{tl_doc.get('scheduler', 'linear_quadratic')} / {relay_steps} steps / CFG {relay_cfg}")
+        print(f"  Audio:      {'KEEP (joint A/V)' if args.relay_save_audio else 'DROP (video-only)'}")
+        print(f"  LoRA:       {'distill-1.1 @ %.1f' % args.relay_lora_strength if args.relay_use_lora else '(bypassed)'}")
+        print(f"  Seed:       {seed_used}")
+        print(f"  Output:     {out_path}")
+        print()
+        print("generating...", flush=True)
+        # Skip the verbose I2V print block + jump straight to submit
+        # (continues at the existing submit_and_wait call below)
+        # We use a sentinel branch inside the existing post-build flow.
 
-    # No mode currently sets joint_av=True; --audio-reference is a no-op (warning
-    # is emitted from build_ltx_i2v_workflow). effective_mode == requested mode.
-    effective_mode = args.mode
-    effective_cfg  = MODES[effective_mode]
-    print("=== Movie Maker Fast — Single Clip ===")
-    print(f"  Mode:       {effective_mode}  (joint_av={effective_cfg['joint_av']}, "
-          f"t2v={args.t2v}, a2v={args.audio_reference is not None})")
-    print(f"  Base:       {effective_cfg['checkpoint']}")
-    print(f"  Encoder:    {effective_cfg['text_encoder']}")
-    print(f"  Video VAE:  {effective_cfg['video_vae']}")
-    if args.audio_reference:
-        print(f"  A2V ref:    {args.audio_reference}  (guidance={args.audio_guidance:.2f}, "
-              f"window {args.audio_start_pct:.2f}..{args.audio_end_pct:.2f})")
-    if args.t2v:
-        print(f"  Input:      (none — text-to-video)")
+    # ── Standard single-prompt I2V/T2V path ────────────────────────────────
+    elif not args.t2v and not args.image:
+        raise SystemExit("`clip` requires --image (or use --t2v for text-to-video mode, or --relay <timeline.json> for prompt-relay)")
     else:
-        print(f"  Image:      {args.image}")
-    if args.persistence is not None:
-        i2v_str = 1.0 - float(args.persistence) * 0.6
-        print(f"  Persistence:{args.persistence:.2f}  (i2v strength={i2v_str:.2f})")
-    print(f"  Sampler:    {sampler} / linear_quadratic / {steps} steps / CFG {cfg}")
-    print(f"  LoRAs ({len(loras)}):")
-    for name, strength in loras:
-        print(f"    {name}  @ {strength}")
-    print(f"  Prompt:     {args.prompt[:80]}{'...' if len(args.prompt) > 80 else ''}")
-    print(f"  Tags:       {args.tags or '(none)'}")
-    print(f"  Dims:       {args.width}×{args.height} @ {args.fps} fps")
-    print(f"  Duration:   {args.duration} s → {wf['41']['inputs']['length']} frames")
-    print(f"  Seed:       {seed_used}")
-    print(f"  Output:     {out_path}")
-    print()
-    print("generating...", flush=True)
+        wf, seed_used = build_ltx_i2v_workflow(
+            image_path=args.image or "",  # ignored when t2v=True
+            prompt=args.prompt, negative_prompt=args.negative,
+            duration_s=args.duration, fps=args.fps,
+            width=args.width, height=args.height,
+            steps=steps, cfg=cfg, seed=seed,
+            loras=loras, mode=args.mode, filename_prefix=internal_prefix,
+            persistence=args.persistence, sampler_name=sampler,
+            t2v=args.t2v,
+            audio_reference=args.audio_reference,
+            audio_guidance_scale=args.audio_guidance,
+            audio_start_percent=args.audio_start_pct,
+            audio_end_percent=args.audio_end_pct,
+        )
+
+    # The verbose Single-Clip print block only applies to the I2V/T2V path
+    # (it inspects MODES, args.t2v, args.image, wf['41'] — all relay-incompatible).
+    # The relay path printed its own banner above, so skip this block when
+    # --relay was used.
+    if not getattr(args, "relay", None):
+        # No mode currently sets joint_av=True; --audio-reference is a no-op (warning
+        # is emitted from build_ltx_i2v_workflow). effective_mode == requested mode.
+        effective_mode = args.mode
+        effective_cfg  = MODES[effective_mode]
+        print("=== Movie Maker Fast — Single Clip ===")
+        print(f"  Mode:       {effective_mode}  (joint_av={effective_cfg['joint_av']}, "
+              f"t2v={args.t2v}, a2v={args.audio_reference is not None})")
+        print(f"  Base:       {effective_cfg['checkpoint']}")
+        print(f"  Encoder:    {effective_cfg['text_encoder']}")
+        print(f"  Video VAE:  {effective_cfg['video_vae']}")
+        if args.audio_reference:
+            print(f"  A2V ref:    {args.audio_reference}  (guidance={args.audio_guidance:.2f}, "
+                  f"window {args.audio_start_pct:.2f}..{args.audio_end_pct:.2f})")
+        if args.t2v:
+            print(f"  Input:      (none — text-to-video)")
+        else:
+            print(f"  Image:      {args.image}")
+        if args.persistence is not None:
+            i2v_str = 1.0 - float(args.persistence) * 0.6
+            print(f"  Persistence:{args.persistence:.2f}  (i2v strength={i2v_str:.2f})")
+        print(f"  Sampler:    {sampler} / linear_quadratic / {steps} steps / CFG {cfg}")
+        print(f"  LoRAs ({len(loras)}):")
+        for name, strength in loras:
+            print(f"    {name}  @ {strength}")
+        print(f"  Prompt:     {args.prompt[:80]}{'...' if len(args.prompt) > 80 else ''}")
+        print(f"  Tags:       {args.tags or '(none)'}")
+        print(f"  Dims:       {args.width}×{args.height} @ {args.fps} fps")
+        print(f"  Duration:   {args.duration} s → {wf['41']['inputs']['length']} frames")
+        print(f"  Seed:       {seed_used}")
+        print(f"  Output:     {out_path}")
+        print()
+        print("generating...", flush=True)
 
     t0 = time.time()
     result, pid = submit_and_wait(wf, f"mmfast-{seed_used}", poll_timeout=1800)
