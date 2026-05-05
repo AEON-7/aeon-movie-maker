@@ -277,50 +277,87 @@ This is the most important step for quality. Read carefully:
    within a sequence). DON'T pack 2 exchanges into one scene — the model
    needs ~2-3 seconds of segment time per spoken line for clean audio.
 
-4. **Match scene `duration` to dialogue length, with a buffer.**
-   LTX 2.3's audio head needs roughly **0.5 s per spoken word** plus
-   ~1.5 s of head/tail buffer (visual setup before the line + breath/
-   action after). Scene duration ≥ `0.5 × word_count + 1.5`.
+4. **Match scene `duration` GENEROUSLY to dialogue length.**
+   The empirically-validated formula from `the_prince_of_two_threads`
+   production: **`duration ≥ word_count + 2 seconds`**, minimum 5s.
+   That's roughly **2× the spoken time** (LTX needs visual setup
+   before the line, the line itself, plus breath/reaction beats after).
+   Earlier guidance based on `0.5 × words + 1.5s` was too conservative —
+   it led to mid-word truncation on the long Ahura Mazda speeches.
 
-   | dialogue | minimum `duration` |
-   |---|---|
-   | "What is this?" (3 words) | 3.0 s |
-   | "I will go to the fire tonight. Alone." (8 words) | 5.0 s |
-   | "He fears the tree. The crystal is older than the abyss. Lead him there. Make him follow you in." (19 words) | **8.0 s** (or split across 2 scenes) |
+   | dialogue | words | `duration` | actual outcome |
+   |---|---|---|---|
+   | "What is this?" | 3 | 5 s | clean |
+   | "How many died this morning?" | 5 | 6 s | clean |
+   | "Then I will go to the fire tonight. Alone." | 9 | 8 s | clean |
+   | "Three hundred more in the eastern provinces, my lord. The wells run black." | 13 | 11 s | clean |
+   | "His own struggle has powered the bloom. The first fruit. For the first who suffered." | 15 | 12 s | clean |
+   | "Two threads woven on one loom. The Lie has touched you, but you have not yet broken." | 18 | 16 s | clean |
+   | "Walk with me, prince. We will seal him forever in the tree that was made before the abyss." | 19 | 17 s | clean |
+   | "He fears the tree. The crystal is older than the abyss. Lead him there. Make him follow you in." | 19 | 16 s | clean (was truncated to "Make of." at duration 5 s) |
 
-   If a dialogue line is **longer than ~12 words**, either bump
-   `duration` to 7+ seconds OR split the line across two consecutive
-   scenes within the same sequence (smooth morphing keeps the visual
-   continuous):
+   The chunker's per-sequence frame budget is **489 frames @ 24fps =
+   20.4 s max**, so single-scene durations up to ~18 s work fine.
+   Beyond that, split the line across two consecutive scenes within
+   the same sequence (no `transition` tag between them — the relay
+   morphs smoothly):
    ```json
-   {"description": "...", "duration": 5.0,
-    "dialogue": [{"character": "X", "line": "First half of the long line."}]},
-   {"description": "...continuing action...", "duration": 5.0,
-    "dialogue": [{"character": "X", "line": "Second half of the long line."}]}
+   {"description": "...", "duration": 8.0,
+    "dialogue": [{"character": "X", "line": "First half of a very long line."}]},
+   {"description": "...continuing action...", "duration": 12.0,
+    "dialogue": [{"character": "X", "line": "Second half of the very long line."}]}
    ```
-   Failing this, LTX **truncates the dialogue mid-word** at the segment
-   boundary — and there's no fix in post (the audio simply isn't there).
+   Failing this, LTX **truncates the dialogue mid-word** at the
+   segment boundary — and there's no fix in post (the audio simply
+   isn't there).
 
-5. **End the LAST scene of each sequence with visual action AFTER the
+5. **Enrich descriptions with explicit pre/post-dialogue action cues**
+   when bumping duration past 6-7s. Without action beats, the longer
+   scene reads as a static character holding still while the dialogue
+   plays, which feels lifeless. The pattern that works:
+
+   ```json
+   {
+     "description": "Medium two-shot. Ahura Mazda kneels gracefully to Darius's eye level, his radiant figure haloed by the column of golden light. The flame on the altar burns steady and bright. Before speaking, he raises a hand of light and gestures at Darius's transformed shoulder. After speaking with gentle authority, he places a hand of light on Darius's transformed shoulder — the obsidian skin softens to a faint amber glow under the touch, then the darkness slowly reclaims it as Darius bows his head",
+     "duration": 16.0,
+     "dialogue": [{"character": "AHURA_MAZDA", "line": "Two threads woven on one loom. The Lie has touched you, but you have not yet broken."}]
+   }
+   ```
+   Three structural beats inside the description:
+   - **Setup** (visual context before the line): "kneels gracefully...the flame burns steady..."
+   - **Pre-dialogue trigger** ("Before speaking, he raises a hand of light..."): primes the speaker
+   - **Post-dialogue reaction** ("After speaking with gentle authority, he places a hand..."): fills the buffer
+   This anchors the model's motion through the longer duration so the
+   character moves naturally during pauses.
+
+6. **End the LAST scene of each sequence with visual action AFTER the
    dialogue line** ("She lifts her cup and sips" / "He looks toward the
    window"). This gives the model time to land the audio cleanly within
    the segment's frame budget. Without this, dialogue can clip at the
    segment boundary.
 
-6. **Use `tags: ["transition"]`** on scenes that should start a new
+7. **Use `tags: ["transition"]`** on scenes that should start a new
    sequence (i.e., a hard cut to a different time/location/character
    entrance). Within a sequence the model morphs smoothly; between
    sequences there's a hard cut.
 
-7. **Don't worry about scene-level narrator interjections in dialogue-
-   less scenes.** LTX's audio head sometimes generates ambient narrator-
-   style speech for visually-rich dialogue-less scenes (drawn from the
-   scene description itself). This is usually atmospheric and good. If
-   a specific narration intrusion is unwanted, remove it post-hoc with
-   ASR-detected `volume=0:enable='between(t,...)'` filtering on the
-   per-sequence MP4 (see the title-narration scrubber pattern below).
+8. **Scene-level narrator interjections in dialogue-less scenes are
+   a known phenomenon.** LTX's joint A/V audio head sometimes
+   generates ambient narrator-style speech in dialogue-less sequences,
+   drawing the words from the scene description itself. Two failure
+   modes seen in production:
+   - **Atmospheric narration that adds context** — usually good,
+     leave as-is. Example from `the_prince_of_two_threads`: "From the
+     roots of the crystal tree in time, and of dying, amaze."
+   - **Nonsense gibberish** — sometimes the model produces non-English
+     or word-salad. Example: "The foot of Crystal Threizoud of Time
+     of Papyrus Hamdings." These should be muted post-hoc.
 
-8. **The screenplay's `title` field will NOT be voiced.** As of v0.5,
+   Both cases are detected via per-sequence ASR transcription. See
+   the **Step 3.5 (audio cleanup)** section below for the full workflow
+   + drop-in scrubber tool.
+
+9. **The screenplay's `title` field will NOT be voiced.** As of v0.5,
    `_build_sequence_wrapper` deliberately omits the title from the
    positive prompt — earlier versions had a bug where LTX read the
    `Film "<title>"` text aloud as a narrator title-card interjection
@@ -377,6 +414,73 @@ further editing or color grading. The underlying LTX 2.3 output is SDR
 model trained for HDR-aware output (none currently exist).
 
 The final mp4 has dialogue audio embedded.
+
+**Step 3.5: Audio cleanup (optional but recommended)**
+
+LTX 2.3's joint A/V audio head occasionally generates unwanted speech in
+dialogue-less sequences (atmospheric scene-description-as-narration that
+ranges from "actually nice" to "complete word-salad gibberish"). The
+clean-room workflow:
+
+1. **ASR-transcribe each per-sequence MP4** with a Whisper-compatible
+   server (we use `qwen3-asr-server` on port 8001):
+   ```bash
+   for mp4 in output/movie_fast/MY_FILM/sequence_*.mp4; do
+       ffmpeg -hide_banner -loglevel error -y -i "$mp4" \
+           -vn -ac 1 -ar 16000 -sample_fmt s16 /tmp/probe.wav
+       text=$(curl -s http://localhost:8001/v1/audio/transcriptions \
+           -F "file=@/tmp/probe.wav" -F "model=qwen3-asr" -F "response_format=text" \
+           | python3 -c "import sys,json;print(json.load(sys.stdin).get('text','').strip())")
+       echo "$(basename $mp4): $text"
+   done
+   ```
+
+2. **Compare transcripts to your scripted dialogue.** For each sequence,
+   the ASR output should match the screenplay's `dialogue` lines for that
+   sequence. Anything else is a hallucination — could be:
+   - **Long dialogue truncated mid-word** ("...Make of." instead of
+     "Make him follow you in") → fix by bumping the scene `duration`
+     and re-rendering that sequence (see rule 4 above).
+   - **Atmospheric narrator interjection** (e.g. "From the roots of the
+     crystal tree...") → usually keep as-is, adds context to silent
+     visual passages.
+   - **Word-salad gibberish** (e.g. "The foot of Crystal Threizoud of
+     Time of Papyrus Hamdings.") → mute that whole sequence's audio.
+
+3. **Mute unwanted sequences** with a clean ffmpeg pass (video stream
+   copied untouched, audio re-encoded with `volume=0`):
+   ```bash
+   in=output/movie_fast/MY_FILM/sequence_023_seedXXXX.mp4
+   tmp=${in%.mp4}_muted.mp4
+   ffmpeg -hide_banner -loglevel error -y -i "$in" \
+       -c:v copy -af "volume=0" -c:a aac -b:a 192k \
+       -movflags +faststart "$tmp"
+   mv "$tmp" "$in"
+   ```
+   For surgical mute of just a time-range (e.g. first 2s of a sequence
+   that has "Title Phrase X" leakage at the start), use the `enable`
+   expression on the `volume` filter:
+   ```bash
+   ffmpeg -i "$in" -c:v copy \
+       -af "volume=enable='between(t,0,2.0)':volume=0" \
+       -c:a aac -b:a 192k -movflags +faststart "$tmp"
+   ```
+
+4. **Re-run `concat-relay`** after cleanup so the muted sequences are
+   incorporated into the final film. Always work on the per-sequence
+   MP4s; never edit the concatenated film directly (no way to
+   re-render parts of a baked file).
+
+5. **ASR-verify the muted sequences are silent** — qwen3-asr will return
+   short hallucination tokens like `"Hoy."` or `"No."` on truly silent
+   input (the model fills empty audio with random short artifacts).
+   Combine with an `astats` RMS check: `RMS_level=-inf` confirms true
+   silence.
+
+This workflow is what eliminated all leakage from `the_prince_of_two_threads`
+v2 production. The wrapper-level title-omission patch (rule 9) prevents
+the most common leak; per-sequence ASR + selective mute handles the
+remainder.
 
 **Step 4: Verify**
 

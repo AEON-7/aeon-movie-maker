@@ -28,9 +28,9 @@
       "characters": ["CHILD"]
     },
     {
-      "description": "Medium close-up on the child's face, large dark eyes wide with wonder. The crystal tree glows softly behind. The child speaks reverently to no one, holding the blade of grass. After speaking the child looks up at the tree's distant canopy",
+      "description": "Medium close-up on the child's face, large dark eyes wide with wonder. The crystal tree glows softly behind. The child holds the blade of grass carefully in both hands, studying it. Then looks up at the tree with a small smile of recognition. After a contemplative breath, the child speaks reverently to no one. After speaking, the child looks up at the tree's distant canopy and watches a luminous fruit slowly form on a high branch",
       "camera": "medium close-up, child eye level",
-      "duration": 5.0,
+      "duration": 8.0,
       "characters": ["CHILD"],
       "dialogue": [{"character": "CHILD", "line": "Father told me the world was once dying."}],
       "tags": ["transition"]
@@ -48,24 +48,24 @@
       "characters": ["DARIUS"]
     },
     {
-      "description": "Close-up on Darius as he turns from the window. Handsome strong jaw, dark stubble, piercing blue eyes burdened with the weight of his people, dark-brown flowing hair stirred by the dry palace breeze. After speaking he closes his eyes briefly",
+      "description": "Close-up on Darius as he turns slowly from the window. Handsome strong jaw, dark stubble, piercing blue eyes burdened with the weight of his people, dark-brown flowing hair stirred by the dry palace breeze. He pauses, gathering himself. After speaking with quiet authority, he closes his eyes briefly and exhales, the question hanging in the empty air",
       "camera": "medium close-up on Darius",
-      "duration": 4.0,
+      "duration": 6.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "How many died this morning?"}],
       "tags": ["transition"]
     },
     {
-      "description": "Wide shot of an OLDER PALACE ATTENDANT kneeling on the polished stone floor before Darius, wearing simple servant robes, his head bowed, holding an unfurled scroll in trembling hands. Torchlight flickers across the carved bas-relief walls behind him. After speaking he keeps his head bowed",
+      "description": "Wide shot of an OLDER PALACE ATTENDANT kneeling on the polished stone floor before Darius, wearing simple servant robes, his head bowed, holding an unfurled scroll in trembling hands. Torchlight flickers across the carved bas-relief walls behind him. He hesitates, then unfurls the scroll further. After speaking with grief in his voice, he keeps his head bowed and lets the scroll roll closed in his shaking hands",
       "camera": "wide shot, slight high angle on the kneeling attendant",
-      "duration": 5.0,
+      "duration": 11.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "ATTENDANT", "line": "Three hundred more in the eastern provinces, my lord. The wells run black."}]
     },
     {
-      "description": "Close on Darius's face, his blue eyes hardening with resolve. He looks past the attendant toward the distant glow of a temple flame. After he speaks he steps forward decisively",
+      "description": "Close on Darius's face, his blue eyes hardening with resolve. He turns his head slightly toward an open doorway through which the distant glow of a temple flame is visible. He breathes in once, deeply. After speaking with quiet determination, he steps forward decisively, his crimson robe billowing behind him as he walks toward the doorway",
       "camera": "medium close-up, slight low angle on Darius",
-      "duration": 5.0,
+      "duration": 8.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "Then I will go to the fire tonight. Alone."}],
       "tags": ["transition"]
@@ -89,9 +89,9 @@
       "tags": ["transition"]
     },
     {
-      "description": "Medium shot. The tendril strikes Darius's right arm with terrible speed. He gasps, eyes flying open, and grips his arm. Black corruption immediately begins spreading up his sleeve, his veins darkening visibly through the skin. After his sharp intake he shouts in surprise and pain",
+      "description": "Medium shot. The tendril strikes Darius's right arm with terrible speed. He gasps sharply, eyes flying open in shock, and grips his arm. Black corruption immediately begins spreading up his sleeve, his veins darkening visibly through the skin. After his sharp cry of confusion, he stumbles backward and stares at his arm in horror",
       "camera": "medium shot, dynamic angle",
-      "duration": 4.0,
+      "duration": 6.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "What is this?"}]
     },
@@ -116,45 +116,45 @@
       "tags": ["transition"]
     },
     {
-      "description": "Close on Darius's hand passing slowly THROUGH the suspended embers, the embers parting like water around his fingers and rejoining behind. His golden eye reflects this miracle. After he speaks barely above a whisper, time resumes — embers fall, flame moves, dust swirls",
+      "description": "Close on Darius's hand passing slowly THROUGH the suspended embers, the embers parting like water around his fingers and rejoining behind. His golden eye reflects this miracle. He pauses, comprehending. After he speaks barely above a whisper of awe, time slowly resumes — embers fall, flame moves, dust swirls, and he closes his hand into a contemplative fist",
       "camera": "tight close-up on his hand and the suspended embers",
-      "duration": 5.0,
+      "duration": 7.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "Time itself bends."}]
     },
     {
       "description": "Wide shot of the temple ruin. A column of pure golden light descends silently from the sky, striking the stone floor between Darius and the altar. Within the column, a luminous figure begins to take shape — AHURA MAZDA, a tall divine presence of living golden light and white flame, flowing robes of cosmic wind, a faint outline of an ancient bearded sage visible through the radiance",
       "camera": "wide shot, low angle on the descending light column",
-      "duration": 5.0,
+      "duration": 6.0,
       "characters": ["DARIUS", "AHURA_MAZDA"],
       "tags": ["transition"]
     },
     {
-      "description": "Medium two-shot. Ahura Mazda stands serene before Darius, his eyes of brilliant starlight regarding the prince's divided face. Darius is on one knee, awestruck. After speaking, Ahura Mazda extends a hand of golden light",
+      "description": "Medium two-shot. Ahura Mazda stands serene before Darius, his eyes of brilliant starlight regarding the prince's divided face. Darius is on one knee, awestruck. Ahura Mazda raises a hand of golden light slowly, palm outward in greeting. He pauses, surveying the prince. After speaking with ancient gravity, he extends both hands of golden light, the radiance softening across the courtyard stones",
       "camera": "medium two-shot, eye level",
-      "duration": 5.0,
+      "duration": 10.0,
       "characters": ["AHURA_MAZDA"],
       "dialogue": [{"character": "AHURA_MAZDA", "line": "Child of Cyrus. I have watched since the dark first fell."}]
     },
     {
-      "description": "Close on Darius, his blue eye and golden eye both wide with wonder and fear, kneeling on the cracked temple floor. After speaking his voice cracks with anguish, and he gestures helplessly at his transformed arm",
+      "description": "Close on Darius, his blue eye and golden eye both wide with wonder and fear, kneeling on the cracked temple floor. He looks down at his transformed right arm, then up at the divine figure. After speaking with his voice cracking with anguish, he gestures helplessly at his transformed arm and bows his head",
       "camera": "intense close-up on Darius",
-      "duration": 5.0,
+      "duration": 6.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "What have I become?"}],
       "tags": ["transition"]
     },
     {
-      "description": "Medium shot. Ahura Mazda kneels gracefully to Darius's eye level, his radiant figure haloed by the column of golden light. The flame on the altar burns steady and bright. After speaking he places a hand of light on Darius's transformed shoulder, which calms briefly under the touch",
+      "description": "Medium shot. Ahura Mazda kneels gracefully to Darius's eye level, his radiant figure haloed by the column of golden light. The flame on the altar burns steady and bright. Before speaking, he raises a hand of light and gestures at Darius's transformed shoulder. After speaking with gentle authority, he places a hand of light on Darius's transformed shoulder — the obsidian skin softens to a faint amber glow under the touch, then the darkness slowly reclaims it as Darius bows his head",
       "camera": "medium two-shot, eye level intimacy",
-      "duration": 5.0,
+      "duration": 16.0,
       "characters": ["AHURA_MAZDA"],
       "dialogue": [{"character": "AHURA_MAZDA", "line": "Two threads woven on one loom. The Lie has touched you, but you have not yet broken."}]
     },
     {
-      "description": "Two-shot. Darius slowly stands. The transformation pulses on his right side, the golden eye glowing in rhythm with the altar flame. Ahura Mazda rises with him, towering serene. After speaking Ahura Mazda's outstretched hand shimmers with a path of golden light leading away into the dark land",
+      "description": "Two-shot. Darius slowly stands. The transformation pulses on his right side, the golden eye glowing in rhythm with the altar flame. Ahura Mazda rises with him, towering serene. The divine figure pauses, looking out across the dark land beyond the temple. After speaking with solemn purpose, he extends an outstretched hand that shimmers, and a path of golden light blooms from the temple floor outward into the night, leading away into the dark land toward unseen mountains",
       "camera": "wide two-shot, both standing, low angle",
-      "duration": 5.0,
+      "duration": 17.0,
       "characters": ["AHURA_MAZDA"],
       "dialogue": [{"character": "AHURA_MAZDA", "line": "Walk with me, prince. We will seal him forever in the tree that was made before the abyss."}],
       "tags": ["transition"]
@@ -172,17 +172,17 @@
       "characters": ["DARIUS", "WOMAN"]
     },
     {
-      "description": "Close-up on the woman's face as she whispers her plea, her cracked lips moving slowly. After she speaks Darius reaches toward her with his still-human left hand",
+      "description": "Close-up on the woman's face as she draws a shaky breath, her cracked lips parting with effort. She looks up at the prince with hope she has not allowed herself in months. After she speaks her plea slowly with grief and hope intermingled, she trembles and Darius reaches toward her with his still-human left hand, his fingertips beginning to glow softly",
       "camera": "intense close-up on the woman",
-      "duration": 5.0,
+      "duration": 8.0,
       "characters": ["WOMAN"],
       "dialogue": [{"character": "WOMAN", "line": "My lord. My grandchildren. The water turned black."}],
       "tags": ["transition"]
     },
     {
-      "description": "Close on Darius's left hand touching the woman's forehead. His hand begins to glow with soft golden light. Where the light touches her skin, the gauntness fades, color returns to her cheeks. After he speaks his hand leaves a trace of golden warmth",
+      "description": "Close on Darius's left hand touching the woman's forehead. His hand begins to glow with soft golden light. Where the light touches her skin, the gauntness fades, color returns to her cheeks. He pauses, channeling the light. After he speaks with quiet kindness, his hand leaves a trace of golden warmth on her brow and he gently helps her sit upright",
       "camera": "tight close-up on the healing touch",
-      "duration": 5.0,
+      "duration": 9.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "Drink at the next well, mother. It will be clean."}]
     },
@@ -200,9 +200,9 @@
       "characters": ["AHRIMAN"]
     },
     {
-      "description": "Medium shot of Darius alone facing the towering shadow. He raises his transformed right hand, golden eye blazing. The world SLOWS — Ahriman's tendrils freeze mid-strike. Darius walks calmly between them, his hand glowing both gold and red. After he speaks time resumes and he plunges his hand into the shadow's center",
+      "description": "Medium shot of Darius alone facing the towering shadow. He raises his transformed right hand, golden eye blazing. The world SLOWS — Ahriman's tendrils freeze mid-strike. Darius walks calmly between them, his hand glowing both gold and red. After he speaks with steel in his voice, time resumes and he plunges his hand into the shadow's center",
       "camera": "medium shot, time-frozen environment",
-      "duration": 5.0,
+      "duration": 6.0,
       "characters": ["DARIUS", "AHRIMAN"],
       "dialogue": [{"character": "DARIUS", "line": "Not here. Not them."}]
     },
@@ -214,24 +214,24 @@
       "tags": ["transition"]
     },
     {
-      "description": "Night. Close-up on Darius alone by a campfire, looking at his transformed right hand. The golden eye pulses. Black veins now creep down his neck onto his chest. He grips his hand as if trying to suppress the spread, his blue eye anguished. After he speaks, his voice is hoarse",
+      "description": "Night. Close-up on Darius alone by a campfire, looking at his transformed right hand. The golden eye pulses. Black veins now creep down his neck onto his chest. He grips his hand as if trying to suppress the spread, his blue eye anguished. He hesitates, looking around to make sure no one hears. After he speaks with his voice hoarse and shaken, he closes his eyes tightly and bows his head over his transformed hand",
       "camera": "tight close-up by firelight",
-      "duration": 5.0,
+      "duration": 9.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "He whispers to me. He says I am already his."}]
     },
     {
-      "description": "Wide shot. The column of golden light returns silently — Ahura Mazda materializes across the campfire from Darius. His radiance cleanses some of the darkness from the air. The other followers sleep nearby, oblivious. After speaking Ahura Mazda kneels to meet Darius's eye level",
+      "description": "Wide shot. The column of golden light returns silently — Ahura Mazda materializes across the campfire from Darius. His radiance cleanses some of the darkness from the air. The other followers sleep nearby, oblivious. Ahura Mazda kneels gracefully to meet Darius's eye level. He pauses, regarding the prince with infinite patience. After speaking with gentle but firm conviction, he extends a hand of light over the campfire, which flares briefly white",
       "camera": "wide shot, both at firelight, slow push-in",
-      "duration": 5.0,
+      "duration": 11.0,
       "characters": ["AHURA_MAZDA"],
       "dialogue": [{"character": "AHURA_MAZDA", "line": "The Lie grows when you doubt. Your task is not to destroy yourself."}],
       "tags": ["transition"]
     },
     {
-      "description": "Two-shot of Darius and Ahura Mazda by the fire. Darius leans forward urgently, his face cast half in firelight half in golden divine glow. After speaking, Ahura Mazda draws a symbol of light in the air between them — a stylized tree with crystal branches",
+      "description": "Two-shot of Darius and Ahura Mazda by the fire. Darius leans forward urgently, his face cast half in firelight half in golden divine glow. Ahura Mazda raises a hand and traces a slow shape in the air — light follows his fingertip, drawing a stylized tree with crystal branches that hangs glowing between them. He pauses, letting Darius study it. After speaking with the weight of ancient prophecy, the floating light-tree slowly fades and his eyes meet Darius's, unwavering",
       "camera": "intimate two-shot, low angle",
-      "duration": 5.0,
+      "duration": 16.0,
       "characters": ["AHURA_MAZDA"],
       "dialogue": [{"character": "AHURA_MAZDA", "line": "He fears the tree. The crystal is older than the abyss. Lead him there. Make him follow you in."}]
     },
@@ -249,9 +249,9 @@
       "characters": ["DARIUS"]
     },
     {
-      "description": "Medium shot. Darius walks alone into the valley toward the crystal tree, leaving his followers behind on the ridge. His crimson robe drags through the dust. His transformed right side darkens further with each step, the golden eye blazing. After he speaks softly, almost to himself, the wind dies completely",
+      "description": "Medium shot. Darius walks alone into the valley toward the crystal tree, leaving his followers behind on the ridge. His crimson robe drags through the dust. His transformed right side darkens further with each step, the golden eye blazing brighter. He pauses at the foot of the tree, raising his transformed hand. After he speaks softly with grim resolve, almost to himself, the wind dies completely and a deep silence falls across the valley",
       "camera": "medium tracking shot from behind",
-      "duration": 5.0,
+      "duration": 10.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "Then come, devourer. I will give you what you have always wanted."}],
       "tags": ["transition"]
@@ -269,17 +269,17 @@
       "characters": ["DARIUS", "AHRIMAN"]
     },
     {
-      "description": "Close-up on Ahriman's writhing core, multiple red eyes turning toward Darius. A single tendril shoots out and seizes Darius's transformed right arm, dark mass merging with dark mass. Ahriman's voice is multiple voices speaking in unison, deep and vast. After speaking the grip tightens",
+      "description": "Close-up on Ahriman's writhing core, multiple red eyes turning toward Darius. A single tendril shoots out and seizes Darius's transformed right arm, dark mass merging with dark mass. Ahriman's voice is multiple voices speaking in unison, deep and vast and patient. After speaking with cold certainty, the grip tightens and more tendrils begin coiling around Darius's torso",
       "camera": "tight close-up on the seized arm",
-      "duration": 5.0,
+      "duration": 7.0,
       "characters": ["AHRIMAN"],
       "dialogue": [{"character": "AHRIMAN", "line": "You are already mine, prince. Stop struggling."}],
       "tags": ["transition"]
     },
     {
-      "description": "Close on Darius's face. His blue eye burns with defiance, his golden eye blazing. Black corruption surges across his cheek but he stands his ground. After he speaks he LUNGES forward into Ahriman's mass, embracing the darkness, pulling them both toward the crystal tree's trunk",
+      "description": "Close on Darius's face. His blue eye burns with defiance, his golden eye blazing. Black corruption surges across his cheek but he stands his ground. He grips Ahriman's tendril with his transformed hand, pulling the darkness toward himself. After he speaks with desperate triumph, he LUNGES forward into Ahriman's mass, embracing the darkness, pulling them both toward the crystal tree's trunk",
       "camera": "intense close-up on Darius",
-      "duration": 5.0,
+      "duration": 7.0,
       "characters": ["DARIUS"],
       "dialogue": [{"character": "DARIUS", "line": "Then come into the tree with me!"}]
     },
@@ -302,9 +302,9 @@
       "tags": ["transition"]
     },
     {
-      "description": "Medium shot. Ahura Mazda appears at the foot of the tree in his column of golden light. He reaches up and gently picks one luminous fruit from the lowest branch. His radiance and the fruit's light merge. After speaking he turns and walks toward the elderly woman from before, who has joined the followers",
+      "description": "Medium shot. Ahura Mazda appears at the foot of the tree in his column of golden light. He reaches up slowly and gently picks one luminous fruit from the lowest branch. His radiance and the fruit's light merge. He cradles the fruit in both hands of light, regarding it with reverence. After speaking with quiet wonder, he turns and walks slowly toward the elderly woman from before, who has joined the followers and stands trembling at the edge of the gathering",
       "camera": "medium shot, ahura mazda picking the fruit",
-      "duration": 5.0,
+      "duration": 12.0,
       "characters": ["AHURA_MAZDA"],
       "dialogue": [{"character": "AHURA_MAZDA", "line": "His own struggle has powered the bloom. The first fruit. For the first who suffered."}]
     },
@@ -356,9 +356,9 @@
       "characters": ["CHILD"]
     },
     {
-      "description": "Close-up on the child's face, smiling now, understanding. After they speak softly the camera lifts up to reveal dozens of other children playing in lush gardens at the tree's base, distant crystal starships rising into a galaxy-filled sky",
+      "description": "Close-up on the child's face, smiling now, understanding. The child holds the blade of grass up toward the tree, a small offering. After they speak softly with wisdom beyond their years, the camera lifts up slowly to reveal dozens of other children playing in lush gardens at the tree's base, distant crystal starships rising into a galaxy-filled sky",
       "camera": "close-up, then dramatic camera lift revealing the world",
-      "duration": 5.0,
+      "duration": 9.0,
       "characters": ["CHILD"],
       "dialogue": [{"character": "CHILD", "line": "And the prince still holds him. So that we may live."}]
     },
