@@ -77,8 +77,48 @@ python scripts/movie_maker_fast.py concat-relay \
     -o output/movie_fast/the_strangers_tea/THE_STRANGERS_TEA.mp4
 ```
 
-Add a custom score generated via the sister
-[`aeon-music-maker`](https://github.com/AEON-7/aeon-music-maker) tool, then
-mux it underneath the dialogue track — see the
-**Production workflow: dialogue + custom music** section in the top-level
-[README](../README.md).
+## Audio production (the part that actually sells the film)
+
+Generating the video is half the job. The other half is the audio mix —
+this is where amateur AI films feel artificial and good ones feel real.
+Production-validated patterns from `the_prince_of_two_threads` v4:
+
+- **Custom score via `aeon-music-maker`** (REQUIRED dep, see AGENTS.md
+  §4e). Don't roll your own ACE-Step ComfyUI workflow — the wrong node
+  selection (SD3 instead of AuraFlow, 50 steps + CFG 5 instead of 10/1
+  on the distilled `xl_turbo`) produces noise. The sister repo handles
+  it correctly.
+- **ACE-Step caps at ~240 s per generation.** Films longer than ~4 min
+  need to be **scored in cues** — multiple short pieces, each matched to
+  a story pivot, concatenated with `acrossfade=d=2`. Aim for 5-10 cues
+  per film. See AGENTS.md Recipe D Step 2 for the full cue-design
+  methodology.
+- **Identify pivots from the chunker output + the `transition` tags.**
+  Each `transition`-tagged scene is a candidate cue boundary because it's
+  where the screenwriter wanted a hard tonal change. Group consecutive
+  same-mood sequences into one cue, change cues at character entrances,
+  tonal flips (dread → revelation, struggle → renewal), and time-stop /
+  supernatural moments.
+- **Cohesion across cues comes from**: shared instrument palette,
+  shared tonic key (with modulations), sequential seeds (729183, 729184,
+  …), and a recurring melodic theme that hints early, emerges fully at
+  the first revelation, gets transformed mid-film, and resolves
+  triumphant in the final cue. We called ours `FRASHOKERETI THEME`.
+- **Always use `--master orchestral`** for cinematic scores — preserves
+  dynamics, hits a consistent LUFS target across cues.
+- **Per-sequence dialogue normalization** is mandatory for multi-scene
+  films. LTX 2.3 renders dialogue with up to 23 LU inter-sequence
+  variation (some lines feel like a whisper next to others). Use
+  `tools/normalize_dialogue.py` (target -23 dB mean, peak ceiling
+  -1.5 dBTP, 48 kHz forced).
+- **Don't sidechain-duck the score under dialogue.** It strips the
+  music's life. Fix the dialogue source loudness instead, then mix at
+  fixed levels (`dialogue=1.0, score=0.25, normalize=0`).
+- **DO NOT use `loudnorm linear=true`** for dialogue normalization —
+  it upsamples to 96 kHz internally, which causes container-level
+  audio dropouts when the AAC encoder retains that rate. Use simple
+  `volumedetect` measurement + `volume=NdB` filter (what
+  `tools/normalize_dialogue.py` does).
+- **Force `-ar 48000`** on every audio re-encode in the chain.
+
+See `AGENTS.md` Recipe D for the complete step-by-step.

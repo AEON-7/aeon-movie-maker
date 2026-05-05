@@ -112,6 +112,38 @@ curl -sf "${COMFYUI_URL:-http://127.0.0.1:8188}/object_info" | python3 -c "impor
 You don't usually need to do this — the recipes below assume the canonical
 `comfyui-aeon-spark` distribution which has every model the recipes need.
 
+### 4e. (Required for Recipe D) `aeon-music-maker` sister repo
+
+Music score generation in Recipe D **depends on the sister repo
+`aeon-music-maker`** (https://github.com/AEON-7/aeon-music-maker). It wraps
+ACE Step 1.5 XL with the correct ComfyUI workflow nodes (DualCLIPLoader +
+ModelSamplingAuraFlow + TextEncodeAceStepAudio1.5 — the v1.5 variants;
+using the wrong node names produces noise, see "Common errors") plus a
+dynamics-preserving mastering chain (HPF → EQ → tape sat → LUFS → true peak).
+
+```bash
+# If not already present:
+git clone https://github.com/AEON-7/aeon-music-maker.git /path/to/aeon-music-maker
+cd /path/to/aeon-music-maker
+./setup.sh                 # checks ComfyUI, fetches missing ACE-Step models
+```
+
+Verify it can call your ComfyUI:
+```bash
+COMFYUI_URL=http://localhost:8188 python3 /path/to/aeon-music-maker/scripts/music_maker.py --help
+```
+
+**Don't roll your own ACE-Step ComfyUI workflow.** It uses `ModelSamplingAuraFlow`
+(NOT `ModelSamplingSD3`), `EmptyAceStep1.5LatentAudio` (not the non-`1.5`
+variant), `TextEncodeAceStepAudio1.5`, and `DualCLIPLoader` with both
+`qwen_0.6b_ace15.safetensors` AND `qwen_4b_ace15.safetensors`. Distilled
+`xl_turbo` requires CFG 1.0 + 10 steps (not 5/50). Get any of these wrong
+and the output is garbled noise. `aeon-music-maker` handles all of this.
+
+ACE-Step 1.5 caps at **~240 seconds per generation**. Films longer than
+that need cue-based composition (multiple short pieces concatenated with
+crossfade) — see Recipe D Step 3.
+
 ---
 
 ## 5. Recipes — copy-paste literal commands
@@ -497,71 +529,250 @@ per-sequence mp4s — each should be h264 + aac.
 
 ### Recipe D — full production (dialogue + custom music)
 
-This is Recipe C plus a custom-composed music score muxed underneath the
-dialogue. Use this when the user wants a "real" cinematic film.
+Recipe C plus a custom-composed cinematic score muxed underneath the
+dialogue, plus per-sequence dialogue normalization for consistent vocal
+levels across the film. Use this when the user wants a "real" film.
 
-**Step 1: Render the dialogue film** — follow Recipe C entirely. The
-top-level `negative_prompt` in the screenplay is critical here — it
-suppresses the model's bundled music so it doesn't fight with your score.
-For multi-sequence films, use `concat-relay --xfade 0.8` (Recipe C step 3)
-to smooth the boundaries — hard cuts between sequences are jarring without
-crossfade.
+**Prerequisite:** `aeon-music-maker` installed and reachable (see 4e).
 
-**Step 2: Get the film duration** — you need this exact number for the
-music render:
+#### Step 1: Render the dialogue film
+Follow Recipe C entirely. Critical for music compatibility:
+- The top-level `negative_prompt` suppresses LTX's bundled music
+- Use `concat-relay --xfade 0` (Recipe C Step 3) for hard cuts — preserves
+  every dialogue word at sequence boundaries
+
+#### Step 2: Identify pivotal beats and design the cue map
+
+This is the make-or-break creative step. **Don't generate one giant
+~5-min track** — that's the temptation but it gives you a generic
+soundscape that doesn't follow the film's emotional arc. Instead:
+
+1. **Get the per-sequence runtime** — the chunker's output (printed by
+   movie_maker_fast.py during render) lists each sequence's duration:
+   ```
+   seq 0: scenes [0..1] (2 scenes, 202 frames ≈ 8.4s) 
+   seq 1: scenes [2..4] (3 scenes, 363 frames ≈ 15.1s) 
+   ...
+   ```
+   Compute cumulative times to map sequences onto the film timeline.
+
+2. **Find pivot points.** A pivot is a moment where the music's
+   character SHOULD change. Look for:
+   - **Visual hard cuts** (any scene with `tags: ["transition"]` is a
+     potential cue boundary — it's where the screenwriter wanted a beat
+     change)
+   - **Character entrances** — the divine/villain shows up
+   - **Tonal flips** — dread → revelation, hope → defeat, struggle → renewal
+   - **Silence before climax** — natural place to drop into a quieter cue
+     so the loud cue lands harder
+   - **Time-stop / supernatural moments** — these almost always need
+     their own brief musical idea
+
+3. **Build the cue map.** Group consecutive sequences that share a mood
+   into one cue, **bounded by pivots**. Aim for **5-10 cues** per film:
+   - Too few (≤3): generic, wallpaper-y
+   - Too many (≥12): jittery, no theme can develop
+
+   For each cue, note:
+   | field | example |
+   |---|---|
+   | timeline | 90-145s (covers SEQ 7-10) |
+   | duration | 55s |
+   | beat | "Divine arrival + covenant formation" |
+   | dynamics | "starts ethereal, swells with FRASHOKERETI theme intro" |
+   | bpm | 64 |
+   | key | D minor → F major brief sunrise |
+   | seed | 729185 (one per cue, sequential for tonal continuity) |
+
+4. **Identify the through-line theme.** Pick ONE recurring melodic
+   identity (we called ours "FRASHOKERETI THEME" after the
+   Zoroastrian renovation concept). The theme:
+   - Hints in the early cues (incomplete, in the bass)
+   - Emerges fully at the first big revelation cue
+   - Gets transformed in middle cues (doubt, conflict)
+   - Resolves triumphant in the final cue
+   This through-line is what binds 10 separate generations into ONE score.
+
+#### Step 3: Generate one cue at a time
+
+For each cue, write a focused prompt with `[section: ...]` tags and call
+`aeon-music-maker`. Use these conventions for cohesion across cues:
+
+- **Same instrument palette** in every prompt (e.g., for our Persian
+  score: ney, santoor, oud, qanun, kamancheh, daf, tombak, setar +
+  bowed bass) — even if a particular cue only foregrounds 2-3 of them
+- **Same tonic anchor** (we used D throughout, with modulations per cue
+  as the arc demanded)
+- **Sequential seeds** (e.g., 729183, 729184, 729185, ...) — this gives
+  the model a similar starting point per cue, which keeps the sonic
+  character broadly continuous
+- **Same `--master` preset** (e.g., `orchestral` for cinematic) —
+  ensures consistent loudness target across all cues
+- **Same `--variant`** (we use `xl_turbo` for iteration speed; `xl_base`
+  for max fidelity if you have the model and patience)
+- **Each cue duration = zone_duration + 2s** — the extra 2s is the
+  trailing tail that crossfades into the next cue. Last cue gets no
+  extra (it's the final fade-out).
 
 ```bash
-ffprobe -v error -show_entries format=duration -of csv=p=0 MY_DIALOGUE_FILM.mp4
-# Example output: 52.270020
+# Example: cue 3 (Divine Majesty + Covenant), 55s zone + 2s tail = 57s
+COMFYUI_URL=http://localhost:8188 python3 /path/to/aeon-music-maker/scripts/music_maker.py \
+    --prompt "$(cat cue3_prompt.txt)" \
+    --duration 57 \
+    --bpm 64 \
+    --key "D minor" \
+    --variant xl_turbo \
+    --master orchestral \
+    --seed 729185 \
+    -o output/music/cue3.flac
 ```
 
-Round to a whole second — that's your music duration.
+The `--prompt` text should describe the FULL cue arc with section tags:
+```
+[intro — column of golden light descends, santoor shimmers in cascading
+harmonics, qanun ornaments rise and fall like wind, distant warm oud
+arpeggios, key of D minor, 64 bpm]
 
-**Step 3: Compose the score with `aeon-music-maker`** (sister repo, must
-be installed separately):
+[verse — Ahura Mazda speaks gently, full ney lead in aeolian mode rises
+with dignified melody, warm oud arpeggios underneath in D minor, qanun
+glissandos add divine sparkle]
+
+[chorus — THE FRASHOKERETI THEME emerges — a hopeful determined melody
+in the ney soaring over the orchestra, distant ritual daf heartbeat
+enters at 64 bpm, the covenant is being formed, key lifting briefly to
+F major like a sunrise]
+
+[outro — the FRASHOKERETI theme settles, ney holds a sustained note of
+promise, daf heartbeat steady, anticipating the journey ahead]
+```
+
+**Watch out**: ComfyUI's `SaveAudioMP3` node auto-increments file suffixes.
+A regenerated `cue7` saved with prefix `cue7_v2` becomes
+`cue7_v2_00001_.mp3`, not `cue7_00002_.mp3`. **Concat scripts using a
+hard-coded `cue7_00001_.mp3` will pick up the OLD file.** Either delete the
+old file before regenerating, or rename the new file to the canonical name
+afterward (the workflow we use):
 
 ```bash
-# Replace <duration> with the integer seconds from step 2
-# Replace the prompt with text matching YOUR film's mood + length
-python scripts/music_maker.py \
-  --prompt "Cinematic ambient score, gentle piano + cello + warm pads, no drums, no percussion, breathing room between phrases. [intro: solo piano, 8 seconds] [verse: cello joins softly, 12 seconds] [bridge: warm pads enter, 10 seconds] [build: strings rise, 12 seconds] [outro: resolves to solo piano, fades, 10 seconds]" \
-  --duration 52 \
-  --bpm 60 \
-  --variant xl_turbo \
-  --master orchestral \
-  -o output/music/my_dialogue_film_score.flac
+# After regenerating cue7 with a different prefix:
+rm /path/to/output/audio/music_maker/cue7_00001_.mp3
+mv /path/to/output/audio/music_maker/cue7_v2_00001_.mp3 \
+   /path/to/output/audio/music_maker/cue7_00001_.mp3
 ```
 
-The `[section: ... N seconds]` tags are critical — they tell the music
-model when to swell, when to breathe, when to resolve. Map the section
-durations to your FILM's emotional beats (intro = lost/quiet,
-build = revelation, outro = resolution).
+#### Step 4: Concatenate cues with crossfades
 
-**Step 4: Mux dialogue + score together**
+Chain `acrossfade` for smooth transitions, pad/trim to film duration:
 
 ```bash
-ffmpeg -i MY_DIALOGUE_FILM.mp4 -i output/music/my_dialogue_film_score.flac \
-  -filter_complex "[0:a]volume=1.0[a0];[1:a]volume=0.28[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=0[a]" \
-  -map 0:v -map "[a]" \
-  -c:v copy -c:a aac -b:a 192k \
-  MY_DIALOGUE_FILM_with_score.mp4
+ffmpeg -y \
+    -i cue1.mp3 -i cue2.mp3 -i cue3.mp3 \
+    -i cue4.mp3 -i cue5.mp3 -i cue6.mp3 \
+    -i cue7.mp3 -i cue8.mp3 -i cue9.mp3 \
+    -filter_complex "
+        [0:a][1:a]acrossfade=d=2:c1=tri:c2=tri[m1];
+        [m1][2:a]acrossfade=d=2:c1=tri:c2=tri[m2];
+        [m2][3:a]acrossfade=d=2:c1=tri:c2=tri[m3];
+        [m3][4:a]acrossfade=d=2:c1=tri:c2=tri[m4];
+        [m4][5:a]acrossfade=d=2:c1=tri:c2=tri[m5];
+        [m5][6:a]acrossfade=d=2:c1=tri:c2=tri[m6];
+        [m6][7:a]acrossfade=d=2:c1=tri:c2=tri[m7];
+        [m7][8:a]acrossfade=d=2:c1=tri:c2=tri[merged];
+        [merged]apad=pad_dur=1,atrim=end=$FILM_DURATION,afade=t=out:start_time=$((FILM_DURATION-2)).5:duration=2.5[final]
+    " \
+    -map "[final]" \
+    -c:a flac -ar 48000 \
+    PRINCE_SCORE.flac
 ```
 
-`volume=0.28` keeps the music at 28% so the dialogue stays intelligible.
-Bump to 0.35 if music feels too thin under speech, drop to 0.20 if
-speech intelligibility suffers.
+Math reminder: `final = sum(cue_durations) - (N-1) * crossfade_duration`.
+With 9 cues × ~30-50s each + 8 × 2s acrossfades, easy to land within
+1-2s of the film duration; `apad` + `atrim` + `afade` clean up the tail.
 
-**Step 5: Verify**
+**Always force `-ar 48000` on the FLAC output.** Mismatched sample rates
+between score and dialogue track cause container-level audio bugs (see
+Common Errors).
+
+#### Step 5: Per-sequence dialogue normalization (recommended)
+
+LTX 2.3 renders dialogue with **huge inter-sequence loudness variation**
+— up to **23 LU spread** in our production runs (one sequence at -10
+LUFS, another at -33 LUFS). If you mux in the score on top of that
+variation, the quiet dialogue scenes will feel buried even though the
+music isn't actually loud.
+
+**Don't fix this with sidechain ducking on the score.** That degrades
+the music. Fix the SOURCE: bring each sequence's dialogue up to a
+consistent level via simple per-sequence gain.
+
+```python
+# For each cleaned/sequence_*.mp4:
+#   1. Measure mean RMS via volumedetect
+#   2. Compute gain = target_db - mean_db
+#   3. Clamp gain so peak doesn't exceed -1.5 dBTP
+#   4. Apply via "volume=NdB", FORCE 48 kHz output
+# See tools/normalize_dialogue.py for a drop-in implementation
+ffmpeg -i sequence_NNN.mp4 -c:v copy \
+    -af "volume=+5.4dB" \
+    -c:a aac -b:a 192k -ar 48000 \
+    -movflags +faststart \
+    normalized/sequence_NNN.mp4
+```
+
+Target: `-23 dB mean / -1.5 dBTP peak`. Skip sequences whose input mean
+is below `-50 dB` (effectively silent — don't amplify noise floor).
+
+⚠️ **DO NOT use `loudnorm` with `linear=true`** for this. It internally
+upsamples to 96 kHz and the resulting AAC audio causes container-level
+playback bugs (audio shorter than video, dropouts). Plain `volume=NdB`
+with `volumedetect` measurement is the safe path.
+
+After normalizing, re-run `concat-relay --xfade 0 --master` on the
+normalized sequences to produce a NORMALIZED.mp4 with consistent
+dialogue throughout.
+
+#### Step 6: Mux normalized dialogue + score
 
 ```bash
-# Confirm video + audio + reasonable size
-ls -lh MY_DIALOGUE_FILM_with_score.mp4
-ffprobe -v error -show_entries stream=codec_type,codec_name,duration -of compact=p=0 MY_DIALOGUE_FILM_with_score.mp4
+ffmpeg -y -i NORMALIZED.mp4 -i PRINCE_SCORE.flac \
+    -filter_complex "
+        [0:a]volume=1.0[d];
+        [1:a]volume=0.25[s];
+        [d][s]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[mixed]
+    " \
+    -map 0:v -map "[mixed]" \
+    -c:v copy -c:a aac -b:a 192k -ar 48000 \
+    -movflags +faststart \
+    FINAL.mp4
 ```
 
-You should see one h264 video stream + one AAC audio stream, both with
-duration matching your input. If no audio stream → the mux dropped it,
-re-run step 4 and check the ffmpeg output for warnings.
+Mix levels:
+- **Dialogue at 1.0** (full level, preserved as-rendered after Step 5)
+- **Score at 0.25** (= -12 dBFS) — sits cleanly underneath
+- **`normalize=0`** prevents amix from auto-attenuating either track
+- **`-ar 48000`** explicit on the encode
+
+If music feels too thin under speech: bump score to 0.30. If speech is
+fighting through: drop score to 0.20. **Don't go below 0.18** or the
+score becomes barely audible. **Don't add `sidechaincompress`** — it
+sucks the life out of the score.
+
+#### Step 7: Verify
+
+```bash
+# Sample rate must be 48000, durations should match the video duration ±0.05s
+ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate,duration -of default=nk=1 FINAL.mp4
+ffprobe -v error -select_streams v:0 -show_entries stream=duration -of default=nk=1:nw=1 FINAL.mp4
+
+# Loudness sanity
+ffmpeg -hide_banner -i FINAL.mp4 -af volumedetect -f null - 2>&1 | grep -E "mean_volume|max_volume"
+# Expect mean ~ -22 to -25 dB (orchestral target with dialogue on top), max ~ -0.5 dB
+```
+
+If audio sample_rate ≠ 48000 → loudnorm contamination, re-do Step 5
+with `volume=NdB` only. If audio duration ≠ video duration → some
+sequence in concat had timing weirdness; check the per-sequence
+NORMALIZED.mp4 durations.
 
 ---
 
@@ -614,6 +825,14 @@ command in the RIGHT column.
 | User asks for "HDR output" | Politely explain: LTX 2.3 is SDR-trained. The model's output is in SDR color space (~BT.709). Encoding to yuv420p10le or yuv444p10le doesn't add HDR data — it just preserves more of the model's existing 8-bit-equivalent dynamic range. True HDR (BT.2020 + PQ/HLG transfer + 10-bit) requires an HDR-trained model, which doesn't exist for video diffusion yet. Offer master/dist split (`concat-relay --master`) as the closest alternative. |
 | `OSError: [Errno 28] No space left on device` | Tell the human their disk is full. Don't try to clean up files yourself. |
 | `OOM` / `out of memory` from ComfyUI | Tell the human ComfyUI ran out of GPU memory. They may need to restart ComfyUI or close other GPU programs. |
+| **Music generation** sounds chaotic / distorted / noise-like | You set the wrong CFG/steps for the variant. **`xl_turbo` requires CFG 1.0 + 10 steps** (it's distilled). Higher values produce noise. Check with `python3 .../music_maker.py --help` and rerun without overriding `--cfg` / `--steps`. |
+| **Music generation** errors with `size mismatch for model.embed_tokens.weight` | You're using `CLIPLoader` with `qwen_*_ace15.safetensors`. ACE-Step needs `DualCLIPLoader` loading BOTH the 0.6B and 4B Qwen text encoders together with type=`ace`. Use `aeon-music-maker` — don't roll your own workflow. |
+| **Music generation** asks for >240s in one call | ACE-Step 1.5 caps at ~240s per generation. Split your score into multiple cues (Recipe D Step 2/3) and concatenate with `acrossfade=d=2`. |
+| **Score regeneration** seems to not actually use the new audio | ComfyUI's `SaveAudioMP3` auto-increments suffixes. A second run with the same prefix saves as `_00002_.mp3`; with a different prefix saves as `<new>_00001_.mp3`. The OLD file is still at `<original>_00001_.mp3` and your concat is using it. Either delete the old file before regenerating, or rename the new file to the canonical name afterward. |
+| **Final mux** has audio dropouts / audio shorter than video | Sample-rate mismatch. Most common cause: `loudnorm` with `linear=true` upsampled audio to 96 kHz internally, leaving the AAC encode at 96 kHz. Force `-ar 48000` on every audio encode in the chain. For dialogue normalization, use simple `volumedetect` measure + `volume=NdB` filter instead of loudnorm linear-mode. |
+| **Some dialogue lines feel too quiet** vs others in same film | LTX renders dialogue with up to 23 LU inter-sequence variation. Don't lower the score / don't sidechain-duck — fix the SOURCE: per-sequence dialogue normalization (Recipe D Step 5). Target -23 dB mean, peak ceiling -1.5 dBTP, simple `volume=NdB` per sequence. |
+| **Score sounds generic / doesn't match the film's emotional arc** | You generated one big track instead of cue-based. Redo as 5-10 cues mapped to story pivot points (Recipe D Step 2). Each cue gets its own focused prompt; cohesion comes from shared instrument palette + sequential seeds + recurring melodic theme. |
+| **Score has a "wash"** that drowns dialogue regardless of mix level | (a) Verify the screenplay's top-level `negative_prompt` is suppressing music — LTX's bundled music in the dialogue track will compound with your composed score. (b) Verify you used `--master orchestral` (or appropriate preset) — without mastering, score loudness is unpredictable. (c) Drop score volume from 0.25 to 0.20 in the amix. |
 
 If your symptom is NOT in this table → **stop and ask the human**. Include:
 - The exact command you ran
